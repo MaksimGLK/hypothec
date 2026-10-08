@@ -1,0 +1,8 @@
+node_modules
+dist
+.turbo
+coverage
+.env
+*.log
+apps/web/e2e/.results
+apps/web/e2e/.screens

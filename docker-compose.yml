@@ -1,0 +1,61 @@
+# Локальный запуск: docker compose up -d
+# Порты слушают только 127.0.0.1 — с другой машины открывайте через SSH-туннель: ssh -L 8080:localhost:8080 сервер
+# Для разработки достаточно postgres и mailpit (api и web запускаются через pnpm dev);
+# профиль "app" поднимает весь сервис (веб — http://localhost:8080): docker compose --profile app up -d --build
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: hypothec
+      POSTGRES_PASSWORD: hypothec
+      POSTGRES_DB: hypothec
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hypothec"]
+      interval: 3s
+      retries: 20
+
+  # Почта для разработки: письма с кодами и напоминаниями видны на http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "127.0.0.1:8025:8025"
+      - "127.0.0.1:1025:1025"
+
+  api:
+    profiles: ["app"]
+    build: { context: ., dockerfile: apps/api/Dockerfile }
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://hypothec:hypothec@postgres:5432/hypothec
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+    # наружу не публикуется: веб проксирует /api на этот контейнер (http://localhost:8080/api/v1/docs)
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  worker:
+    profiles: ["app"]
+    build: { context: ., dockerfile: apps/api/Dockerfile }
+    command: ["node", "dist/worker.js"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://hypothec:hypothec@postgres:5432/hypothec
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  web:
+    profiles: ["app"]
+    build: { context: ., dockerfile: apps/web/Dockerfile }
+    ports:
+      - "${WEB_BIND:-127.0.0.1}:8080:8080"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:

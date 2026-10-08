@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "Ипотечный планировщик",
+    "slug": "hypothec",
+    "scheme": "hypothec",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": { "bundleIdentifier": "ru.hypothec.app", "supportsTablet": false },
+    "android": { "package": "ru.hypothec.app" },
+    "plugins": ["expo-router", "expo-secure-store"],
+    "experiments": { "typedRoutes": false },
+    "extra": {
+      "apiUrl": "http://10.0.2.2:3000/api/v1"
+    }
+  }
+}

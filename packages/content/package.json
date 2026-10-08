@@ -1,0 +1,12 @@
+{
+  "name": "@hypothec/content",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Тексты уроков, словарь и правила рекомендаций — данные, которые обновляются без выпуска приложений",
+  "exports": {
+    "./package.json": "./package.json",
+    "./rules/starter.json": "./rules/starter.json",
+    "./glossary.json": "./glossary.json"
+  }
+}

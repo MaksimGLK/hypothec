@@ -1,0 +1,30 @@
+{
+  "name": "hypothec",
+  "private": true,
+  "packageManager": "pnpm@10.34.6",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "db:up": "docker compose up -d postgres mailpit",
+    "dev:api": "pnpm --filter @hypothec/api dev",
+    "dev:worker": "pnpm --filter @hypothec/api worker:dev",
+    "dev:web": "pnpm --filter @hypothec/web dev",
+    "e2e": "docker run --rm --network host --ipc=host -u $(id -u):$(id -g) -e HOME=/tmp -e WEB_URL -v \"$PWD\":/repo -w /repo/apps/web mcr.microsoft.com/playwright:v1.63.0-noble npx playwright test",
+    "dev:mobile": "pnpm --filter @hypothec/mobile start"
+  },
+  "devDependencies": {
+    "turbo": "2.11.7",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}
