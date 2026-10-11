@@ -8,6 +8,8 @@ import type { AppDeps } from './deps.js';
 import { createBoss, ensureQueues, pgBossJobs, QUEUES } from './jobs/queue.js';
 import { createSmtpMailer } from './lib/mailer.js';
 import { rebuildHouseholdReminders, sendDueNotifications } from './services/notifications.js';
+import { applyAutoPayments } from './services/autopay.js';
+import { applyDuePrepayments } from './services/prepayment-execution.js';
 
 /**
  * Фоновый процесс: напоминания по email. Тот же образ, что и API, отдельный процесс.
@@ -32,7 +34,13 @@ await boss.work<{ householdId: string }>(QUEUES.householdReminders, async (jobs)
 
 await boss.work(QUEUES.dailyReminders, async () => {
   const rows = await db.select({ id: households.id }).from(households).orderBy(asc(households.createdAt));
-  for (const h of rows) await boss.send(QUEUES.householdReminders, { householdId: h.id });
+  for (const h of rows) {
+    const created = await applyAutoPayments(deps, h.id).catch((err) => (log.error({ err, householdId: h.id }, 'auto pay failed'), 0));
+    if (created) log.info({ householdId: h.id, created }, 'auto payments recorded');
+    const executed = await applyDuePrepayments(deps, h.id).catch((err) => (log.error({ err, householdId: h.id }, 'prepayment execution failed'), 0));
+    if (executed) log.info({ householdId: h.id, executed }, 'prepayments executed');
+    await boss.send(QUEUES.householdReminders, { householdId: h.id });
+  }
   log.info({ households: rows.length }, 'daily reminders queued');
 });
 

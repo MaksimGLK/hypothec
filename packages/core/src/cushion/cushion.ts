@@ -90,7 +90,8 @@ export function stressTest(params: {
       .filter((e) => params.includeUnstable || e.reliability === 'stable')
       .reduce((s, e) => s + e.amountKop, 0);
     const obligatory = params.obligations
-      .filter((o) => monthKey(o.dueDate) === mk && o.kind !== 'deal')
+      // в трудный период необязательные траты урезают — считаем только обязательные
+      .filter((o) => monthKey(o.dueDate) === mk && o.kind !== 'deal' && o.kind !== 'living_flexible')
       .reduce((s, o) => s + o.amountKop, 0);
     const gap = obligatory - income;
     if (gap > 0) {

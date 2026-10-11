@@ -26,9 +26,24 @@ interface Answers {
   priceKop: number | null;
   downPaymentKop: number | null;
   startDate: string;
+  budget: Record<string, number | null>;
 }
 
-const STEPS = ['Семья', 'Жильё', 'Своя квартира', 'Деньги', 'Ипотека', 'Готово'];
+const STEPS = ['Семья', 'Жильё', 'Своя квартира', 'Деньги', 'Ипотека', 'Расходы на жизнь', 'Готово'];
+
+/** Главные категории бюджета, которые спрашиваем в мастере. Остальные можно добавить в разделе «Бюджет». */
+const BUDGET_FIELDS: { key: string; label: string; hint?: string }[] = [
+  { key: 'utilities', label: 'Коммуналка' },
+  { key: 'groceries', label: 'Продукты' },
+  { key: 'transport', label: 'Транспорт или машина' },
+  { key: 'mobile', label: 'Связь и интернет' },
+  { key: 'kids_activities', label: 'Кружки и секции детей' },
+  { key: 'kids_school', label: 'Садик и школа' },
+  { key: 'health', label: 'Здоровье и аптека' },
+  { key: 'cafe', label: 'Кафе, доставка, развлечения' },
+  { key: 'rent', label: 'Аренда жилья', hint: 'Если снимаете — до переезда' },
+  { key: 'other', label: 'Всё остальное' },
+];
 
 function Choice({ selected, onClick, icon, title, text }: { selected: boolean; onClick(): void; icon?: ReactNode; title: string; text: string }) {
   return (
@@ -86,6 +101,7 @@ export default function WizardPage() {
     priceKop: null,
     downPaymentKop: null,
     startDate: new Date().toISOString().slice(0, 10),
+    budget: {},
   });
   const [result, setResult] = useState<{ notes: string[] } | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
@@ -112,6 +128,9 @@ export default function WizardPage() {
         ...(a.annualRate ? { annualRate: a.annualRate.replace(',', '.') } : {}),
         termYears: a.termYears,
         startDate: a.startDate,
+        budget: Object.entries(a.budget)
+          .filter(([, v]) => (v ?? 0) > 0)
+          .map(([catalogKey, amountKop]) => ({ catalogKey, amountKop: amountKop! })),
       };
       const res = await api<{ notes: string[] }>(`/households/${hid}/wizard`, { method: 'POST', body });
       await qc.invalidateQueries({ queryKey: ['h', hid] });
@@ -137,10 +156,10 @@ export default function WizardPage() {
             </ul>
           </Card>
         )}
-        <Card className="mt-4" title="Следующий шаг — доходы">
-          <p className="text-sm text-ink-2">Чтобы посчитать, сколько и куда откладывать, добавьте зарплаты и другие поступления. Это займёт пару минут.</p>
+        <Card className="mt-4" title="Следующий шаг — «Мой месяц»">
+          <p className="text-sm text-ink-2">На одной странице впишите доходы, проверьте расходы на жизнь и посмотрите, сколько остаётся в копилку. Это займёт пару минут.</p>
           <div className="mt-4 flex flex-wrap gap-2">
-            <Button onClick={() => navigate('/money/incomes')}>Добавить доходы</Button>
+            <Button onClick={() => navigate('/month')}>Открыть «Мой месяц»</Button>
             <Button variant="secondary" onClick={() => navigate('/')}>
               На главную
             </Button>
@@ -257,6 +276,25 @@ export default function WizardPage() {
       )}
 
       {step === 5 && (
+        <section className="space-y-4">
+          <h1 className="text-2xl font-semibold">Сколько уходит на жизнь в месяц?</h1>
+          <p className="text-sm text-ink-2">Примерно, без копеек. Это нужно, чтобы посчитать подушку и понять, сколько остаётся на цели. Можно пропустить и заполнить потом в разделе «Бюджет».</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {BUDGET_FIELDS.map((f) => (
+              <Field key={f.key} label={f.label} htmlFor={`b-${f.key}`} hint={f.hint}>
+                <MoneyInput id={`b-${f.key}`} value={a.budget[f.key] ?? null} onChange={(k) => set('budget', { ...a.budget, [f.key]: k })} />
+              </Field>
+            ))}
+          </div>
+          <Card tone="info">
+            <p className="text-sm">
+              Итого: <strong className="num">{formatRub(Object.values(a.budget).reduce<number>((sum, v) => sum + (v ?? 0), 0), { kopecks: 'never' })}</strong> в месяц
+            </p>
+          </Card>
+        </section>
+      )}
+
+      {step === 6 && (
         <section className="space-y-4">
           <h1 className="text-2xl font-semibold">Когда начинаете?</h1>
           <Field label="Дата начала" htmlFor="start" hint="От неё рассчитаем плановые даты этапов. Их можно будет поправить.">

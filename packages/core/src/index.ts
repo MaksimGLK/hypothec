@@ -31,3 +31,5 @@ export * from './calendar/calendar.js';
 export * from './projection/types.js';
 export * from './projection/plan.js';
 export * from './lessons/personal.js';
+export * from './budget/budget.js';
+export * from './projection/distribution.js';

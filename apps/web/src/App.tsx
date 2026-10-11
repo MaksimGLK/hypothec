@@ -11,12 +11,15 @@ import { AppLayout, MorePage } from './layout/AppLayout.js';
 import { ForgotPage, LoginPage, RegisterPage } from './pages/auth/AuthPages.js';
 import { ConsentPage } from './pages/auth/ConsentPage.js';
 import { InvitePage } from './pages/auth/InvitePage.js';
+import { HelpPage } from './pages/HelpPage.js';
 import { DashboardPage } from './pages/DashboardPage.js';
 
 // тяжёлые экраны (графики) — отдельными чанками
 const WizardPage = lazy(() => import('./pages/WizardPage.js'));
 const StagesPage = lazy(() => import('./pages/StagesPage.js'));
 const IncomesPage = lazy(() => import('./pages/money/IncomesPage.js'));
+const BudgetPage = lazy(() => import('./pages/BudgetPage.js'));
+const MonthPage = lazy(() => import('./pages/MonthPage.js'));
 const ExpensesPage = lazy(() => import('./pages/money/ExpensesPage.js'));
 const AllocationPage = lazy(() => import('./pages/money/AllocationPage.js'));
 const LoanPage = lazy(() => import('./pages/loan/LoanPage.js'));
@@ -78,6 +81,7 @@ export function App() {
               <Route path="/register" element={<RedirectIfSignedIn><RegisterPage /></RedirectIfSignedIn>} />
               <Route path="/forgot" element={<ForgotPage />} />
               <Route path="/consent" element={<ConsentPage />} />
+              <Route path="/help" element={<HelpPage />} />
               <Route path="/invite/:token" element={<RequireAuth><InvitePage /></RequireAuth>} />
               <Route
                 element={
@@ -96,6 +100,8 @@ export function App() {
                 <Route path="/learn" element={page(<LearnPage />)} />
                 <Route path="/" element={<RequireScenario><DashboardPage /></RequireScenario>} />
                 <Route path="/stages" element={<RequireScenario>{page(<StagesPage />)}</RequireScenario>} />
+ <Route path="/month" element={<RequireScenario>{page(<MonthPage />)}</RequireScenario>} />
+                <Route path="/budget" element={<RequireScenario>{page(<BudgetPage />)}</RequireScenario>} />
                 <Route path="/money/incomes" element={<RequireScenario>{page(<IncomesPage />)}</RequireScenario>} />
                 <Route path="/money/expenses" element={<RequireScenario>{page(<ExpensesPage />)}</RequireScenario>} />
                 <Route path="/money/allocation" element={<RequireScenario>{page(<AllocationPage />)}</RequireScenario>} />

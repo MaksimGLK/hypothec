@@ -8,6 +8,7 @@ import { D, type Kop, roundKop, rub } from '../money/money.js';
 import type { PlanContext } from '../projection/types.js';
 import type { Facts } from './jsonlogic.js';
 import type { EffectResult } from './types.js';
+import { budgetMonth } from '../budget/budget.js';
 
 export type EffectCalculator = (ctx: PlanContext, facts: Facts, params: Record<string, unknown>) => EffectResult | null;
 
@@ -26,6 +27,31 @@ function nearestPrepaymentDate(ctx: PlanContext, loanId: string, after: IsoDate)
 
 /** Реестр калькуляторов эффекта. Правило в данных ссылается на калькулятор по имени. */
 export const EFFECT_CALCULATORS: Record<string, EffectCalculator> = {
+  budgetOverspend: (ctx, facts) => {
+    const month = addMonths(ctx.today, -1).slice(0, 7);
+    const b = budgetMonth(ctx.input.living, ctx.input.spendings ?? [], month, ctx.today, { keysDate: ctx.keysDate });
+    const top = [...b.categories].sort((a, c) => a.leftKop - c.leftKop)[0];
+    const overspend = Number(facts.lastMonthOverspendKop ?? 0);
+    return {
+      valueKop: overspend,
+      details: {
+        overspendKop: overspend,
+        yearlyKop: overspend * 12,
+        topCategory: top && top.leftKop < 0 ? top.name : 'траты без категории',
+        topOverspendKop: top && top.leftKop < 0 ? -top.leftKop : 0,
+        planKop: b.planKop,
+        factKop: b.factKop,
+      },
+      formula: 'Сумма перерасходов по категориям за прошлый месяц: факт − план там, где факт больше плана.',
+    };
+  },
+
+  budgetMissing: (_ctx, facts) => ({
+    valueKop: 0,
+    details: { stableIncomeKop: Number(facts.stableIncomeExistsKop ?? 0) },
+    formula: 'Расходы на жизнь не указаны — обязательные расходы считаются только по ипотеке.',
+  }),
+
   cushionMonthsNow: (ctx) => ({
     months: ctx.cushion.monthsCovered,
     valueKop: Math.max(0, ctx.cushion.minTargetKop - ctx.cushion.currentKop),

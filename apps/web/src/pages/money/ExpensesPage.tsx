@@ -2,15 +2,16 @@ import { expenseTotals, type ExpenseCatalogItem, type ExpenseInput } from '@hypo
 import { useQuery } from '@tanstack/react-query';
 import { Check, Pencil, Plus, Trash2 } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
+import { Link } from 'react-router';
 import { api } from '../../api/client.js';
 import { useHh, useHhMutation } from '../../api/household.js';
-import type { ExpenseDto, LivingDto, LoanDto, StageDto } from '../../api/types.js';
+import type { ExpenseDto, LoanDto, StageDto } from '../../api/types.js';
 import { Term } from '../../components/learning.js';
 import { Badge, Button, Card, ConfirmButton, DateText, Empty, ErrorBox, Field, Input, Modal, Money, MoneyInput, PageHeader, Segmented, Select, Spinner, Switch } from '../../components/ui/index.js';
 import { Tabs } from '../../layout/AppLayout.js';
 import { MONEY_TABS } from './IncomesPage.js';
 
-type Section = 'deal' | 'after' | 'monthly';
+type Section = 'deal' | 'after';
 const PRIORITY: Record<number, { label: string; tone: 'danger' | 'warn' | 'neutral' }> = {
   1: { label: 'сначала', tone: 'danger' },
   2: { label: 'потом', tone: 'warn' },
@@ -19,40 +20,32 @@ const PRIORITY: Record<number, { label: string; tone: 'danger' | 'warn' | 'neutr
 
 export default function ExpensesPage() {
   const expenses = useHh<ExpenseDto[]>('/expenses');
-  const living = useHh<LivingDto[]>('/living-expenses');
   const [section, setSection] = useState<Section>('deal');
   const [edit, setEdit] = useState<Partial<ExpenseDto> | null>(null);
-  const [editLiving, setEditLiving] = useState<Partial<LivingDto> | null>(null);
   const [catalogOpen, setCatalogOpen] = useState(false);
-  if (expenses.isLoading || living.isLoading) return <Spinner />;
+  if (expenses.isLoading) return <Spinner />;
   if (expenses.error) return <ErrorBox error={expenses.error} />;
   const all = expenses.data ?? [];
   const deal = all.filter((e) => e.category !== 'after_keys');
   const after = all.filter((e) => e.category === 'after_keys').sort((a, b) => (a.priority ?? 2) - (b.priority ?? 2));
   const dealTotals = expenseTotals(deal.filter((e) => e.recurrence === 'once') as ExpenseInput[]);
   const afterTotals = expenseTotals(after as ExpenseInput[]);
-  const livingTotal = (living.data ?? []).reduce((s, l) => s + l.amountKop, 0);
 
   return (
     <div>
       <Tabs items={MONEY_TABS} />
       <PageHeader
-        title="Расходы"
+        title="Расходы сделки"
+        subtitle={<>Оценка, страховки, госпошлина, обустройство. Траты на жизнь — в разделе <Link to="/budget" className="text-primary">«Бюджет»</Link>.</>}
         action={
-          section === 'monthly' ? (
-            <Button size="sm" variant="secondary" onClick={() => setEditLiving({ name: '', amountKop: 0 })}>
-              <Plus className="size-4" aria-hidden /> Добавить
+          <div className="flex gap-2">
+            <Button size="sm" variant="secondary" onClick={() => setCatalogOpen(true)}>
+              Из справочника
             </Button>
-          ) : (
-            <div className="flex gap-2">
-              <Button size="sm" variant="secondary" onClick={() => setCatalogOpen(true)}>
-                Из справочника
-              </Button>
-              <Button size="sm" variant="secondary" onClick={() => setEdit({ category: section === 'after' ? 'after_keys' : 'mandatory', recurrence: 'once', planKop: 0, name: '', ...(section === 'after' ? { priority: 2 as const } : {}) })}>
-                <Plus className="size-4" aria-hidden /> Свой
-              </Button>
-            </div>
-          )
+            <Button size="sm" variant="secondary" onClick={() => setEdit({ category: section === 'after' ? 'after_keys' : 'mandatory', recurrence: 'once', planKop: 0, name: '', ...(section === 'after' ? { priority: 2 as const } : {}) })}>
+              <Plus className="size-4" aria-hidden /> Свой
+            </Button>
+          </div>
         }
       />
       <div className="mb-4">
@@ -63,7 +56,6 @@ export default function ExpensesPage() {
           options={[
             { value: 'deal', label: 'Сделка' },
             { value: 'after', label: 'После ключей' },
-            { value: 'monthly', label: 'Каждый месяц' },
           ]}
         />
       </div>
@@ -93,32 +85,7 @@ export default function ExpensesPage() {
         </>
       )}
 
-      {section === 'monthly' && (
-        <>
-          <Card className="mb-4">
-            <p className="text-sm text-ink-2">
-              Базовые траты семьи в месяц: еда, коммуналка, транспорт, аренда до переезда. Нужны, чтобы посчитать <Term k="cushion">подушку</Term> и распределение доходов.
-            </p>
-            <p className="mt-2 text-lg font-semibold">
-              Итого: <Money kop={livingTotal} /> в месяц
-            </p>
-          </Card>
-          {(living.data ?? []).length === 0 ? (
-            <Empty title="Не указаны траты" action={<Button size="sm" onClick={() => setEditLiving({ name: 'Базовые траты', amountKop: 0 })}>Указать</Button>}>
-              Можно одной суммой — примерно, сколько уходит в месяц на жизнь.
-            </Empty>
-          ) : (
-            <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
-              {living.data!.map((l) => (
-                <LivingRow key={l.id} item={l} onEdit={() => setEditLiving(l)} />
-              ))}
-            </ul>
-          )}
-        </>
-      )}
-
       {edit && <ExpenseModal value={edit} onClose={() => setEdit(null)} />}
-      {editLiving && <LivingModal value={editLiving} onClose={() => setEditLiving(null)} />}
       {catalogOpen && <CatalogModal existing={all} onClose={() => setCatalogOpen(false)} afterKeys={section === 'after'} />}
     </div>
   );
@@ -354,63 +321,6 @@ function CatalogModal({ existing, onClose, afterKeys }: { existing: ExpenseDto[]
           </li>
         ))}
       </ul>
-    </Modal>
-  );
-}
-
-function LivingRow({ item, onEdit }: { item: LivingDto; onEdit(): void }) {
-  const remove = useHhMutation('DELETE', `/living-expenses/${item.id}`, { success: 'Удалено' });
-  return (
-    <li className="flex items-center gap-3 px-4 py-3">
-      <div className="min-w-0 flex-1">
-        <p className="font-medium">{item.name}</p>
-        {(item.endsAtKeys || item.startsAtKeys || item.endDate) && (
-          <p className="text-xs text-ink-2">{item.endsAtKeys ? 'до переезда' : item.startsAtKeys ? 'после переезда' : item.endDate ? `до ${new Date(item.endDate).toLocaleDateString('ru-RU')}` : ''}</p>
-        )}
-      </div>
-      <Money kop={item.amountKop} className="font-medium" />
-      <Button size="sm" variant="ghost" onClick={onEdit} aria-label={`Изменить: ${item.name}`}>
-        <Pencil className="size-4" />
-      </Button>
-      <ConfirmButton confirm={`Удалить «${item.name}»?`} onConfirm={() => remove.mutate(undefined)}>
-        <Trash2 className="size-4" aria-label="Удалить" />
-      </ConfirmButton>
-    </li>
-  );
-}
-
-function LivingModal({ value, onClose }: { value: Partial<LivingDto>; onClose(): void }) {
-  const [v, setV] = useState(value);
-  const isEdit = Boolean(value.id);
-  const save = useHhMutation<Record<string, unknown>>(isEdit ? 'PATCH' : 'POST', isEdit ? `/living-expenses/${value.id}` : '/living-expenses', { success: 'Сохранено' });
-  return (
-    <Modal open onOpenChange={(o) => !o && onClose()} title="Траты в месяц">
-      <form
-        className="space-y-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          save.mutate(
-            { name: v.name, amountKop: v.amountKop ?? 0, kind: v.kind ?? 'other', endsAtKeys: v.endsAtKeys ?? false, startsAtKeys: v.startsAtKeys ?? false, endDate: v.endDate ?? null, ...(isEdit ? { version: value.version } : {}) },
-            { onSuccess: onClose },
-          );
-        }}
-      >
-        <Field label="Название" htmlFor="lv-name">
-          <Input id="lv-name" required value={v.name ?? ''} onChange={(e) => setV({ ...v, name: e.target.value })} />
-        </Field>
-        <Field label="Сумма в месяц" htmlFor="lv-amount">
-          <MoneyInput id="lv-amount" value={v.amountKop ?? null} onChange={(k) => setV({ ...v, amountKop: k ?? 0 })} />
-        </Field>
-        <Switch checked={v.endsAtKeys ?? false} onChange={(c) => setV({ ...v, endsAtKeys: c, kind: c ? 'rent' : v.kind })} label="Закончится после переезда (например, аренда)" />
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="secondary" onClick={onClose}>
-            Отмена
-          </Button>
-          <Button type="submit" loading={save.isPending}>
-            Сохранить
-          </Button>
-        </div>
-      </form>
     </Modal>
   );
 }

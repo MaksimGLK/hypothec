@@ -2,6 +2,7 @@ import { formatRub, parseDate, type RateChange } from '@hypothec/core';
 import { Plus, Trash2, Upload } from 'lucide-react';
 import { type FormEvent, useMemo, useState } from 'react';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { useAuth } from '../../api/auth.js';
 import { useHh, useHhMutation } from '../../api/household.js';
 import type { LoanDto, ReconcileResult, ScheduleDto } from '../../api/types.js';
 import { LessonsFor, Term } from '../../components/learning.js';
@@ -67,6 +68,7 @@ export default function LoanPage() {
 }
 
 function LoanDetails({ loan }: { loan: LoanDto }) {
+  const advanced = useAuth().uiMode === 'advanced';
   const schedule = useHh<ScheduleDto>(`/loans/${loan.id}/schedule`);
   const [editing, setEditing] = useState(false);
   const [csvOpen, setCsvOpen] = useState(false);
@@ -160,14 +162,14 @@ function LoanDetails({ loan }: { loan: LoanDto }) {
               </ResponsiveContainer>
             </div>
           </Card>
-          <ScheduleTable schedule={s} />
+          {advanced && <ScheduleTable schedule={s} />}
         </>
       ) : null}
 
-      <Card title="График из банка" action={<Button size="sm" variant="secondary" onClick={() => setCsvOpen(true)}><Upload className="size-4" aria-hidden /> Загрузить CSV</Button>}>
+      {advanced && <Card title="График из банка" action={<Button size="sm" variant="secondary" onClick={() => setCsvOpen(true)}><Upload className="size-4" aria-hidden /> Загрузить CSV</Button>}>
         <p className="text-sm text-ink-2">Загрузите график платежей из личного кабинета банка, и мы сверим его с расчётом. Если банк считает проценты по дням, подскажем, что поменять.</p>
         <BankDiff loanId={loan.id} />
-      </Card>
+      </Card>}
 
       {editing && (
         <Modal open onOpenChange={setEditing} title="Параметры кредита">
@@ -218,6 +220,7 @@ function ScheduleTable({ schedule }: { schedule: ScheduleDto }) {
 type LoanFormValue = Omit<LoanDto, 'id' | 'version'> & { id?: string; version?: number };
 
 export function LoanForm({ loan, onDone }: { loan?: LoanDto; onDone(): void }) {
+  const advanced = useAuth().uiMode === 'advanced';
   const [v, setV] = useState<LoanFormValue>(
     loan ?? { name: 'Ипотека', principalKop: 0, annualRate: '', termMonths: 240, type: 'annuity', issueDate: new Date().toISOString().slice(0, 10), interestMode: 'monthly', rateChanges: [] },
   );
@@ -275,14 +278,17 @@ export function LoanForm({ loan, onDone }: { loan?: LoanDto; onDone(): void }) {
         <Field label="День платежа" htmlFor="ln-day" hint="По умолчанию — день выдачи">
           <Input id="ln-day" type="number" min={1} max={31} value={v.paymentDay ?? ''} onChange={(e) => set('paymentDay', e.target.value ? Number(e.target.value) : undefined)} />
         </Field>
+{advanced && (
         <Field label="Как банк считает проценты" htmlFor="ln-mode" hint="Смотрите в договоре или сверьте с графиком банка">
           <Select id="ln-mode" value={v.interestMode} onChange={(e) => set('interestMode', e.target.value as LoanDto['interestMode'])}>
             <option value="monthly">Ставка ÷ 12 каждый месяц</option>
             <option value="daily">По фактическим дням</option>
           </Select>
         </Field>
+        )}
       </div>
 
+      {advanced && (<>
       <div className="rounded-xl bg-surface-2 p-3">
         <div className="mb-2 flex items-center justify-between">
           <h3 className="text-sm font-medium">Изменение ставки</h3>
@@ -318,6 +324,7 @@ export function LoanForm({ loan, onDone }: { loan?: LoanDto; onDone(): void }) {
           </Field>
         </div>
       </div>
+      </>)}
 
       <div className="flex justify-between gap-2">
         {loan ? (

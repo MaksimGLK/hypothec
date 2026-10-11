@@ -364,6 +364,27 @@ export const householdRoutes: FastifyPluginAsyncZod = async (app) => {
             })),
           );
         }
+        // расходы на жизнь из мастера: добавляем категории, которых ещё нет
+        if (draft.living.length) {
+          const existing = await tx.select({ catalogKey: s.livingExpenses.catalogKey }).from(s.livingExpenses).where(eq(s.livingExpenses.householdId, hid));
+          const have = new Set(existing.map((e) => e.catalogKey));
+          const fresh = draft.living.filter((l) => !have.has(l.catalogKey ?? null));
+          if (fresh.length) {
+            await tx.insert(s.livingExpenses).values(
+              fresh.map((l) => ({
+                householdId: hid,
+                name: l.name,
+                amountKop: l.amountKop,
+                essential: l.essential ?? true,
+                group: l.group ?? null,
+                catalogKey: l.catalogKey ?? null,
+                kind: l.kind ?? null,
+                endsAtKeys: l.endsAtKeys ?? false,
+                sort: l.sort ?? 0,
+              })),
+            );
+          }
+        }
         return { scenario: scenario!, loanId };
       });
       return { scenario: scenarioDto(result.scenario), stages: await loadStages(db, hid), loanId: result.loanId, notes: draft.notes };

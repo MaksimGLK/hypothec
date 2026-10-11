@@ -225,3 +225,50 @@ describe('путь семьи: мастер → доходы → план', () =
     expect(diff.data.mismatched).toBe(0);
   });
 });
+
+describe('досрочка в свой день', () => {
+  it('списывается со счёта «Досрочка», ждёт подтверждения; «сумма другая» и «не вносил» пересчитывают остаток и график', async () => {
+    const s = await register(ctx);
+    const api = client(ctx, s.token);
+    const p = (x: string) => `/households/${s.householdId}${x}`;
+    // кредит выдан раньше, чтобы досрочка была в прошлом относительно «сегодня» (8 октября)
+    const loan = (await api('POST', p('/loans'), { name: 'Ипотека', principalKop: 500_000_000, annualRate: '16', termMonths: 240, type: 'annuity', issueDate: '2026-06-15' })).data;
+    const accounts = (await api('GET', p('/accounts'))).data;
+    const prepayAcc = accounts.find((a: { kind: string }) => a.kind === 'prepayment');
+    await api('PATCH', p(`/accounts/${prepayAcc.id}`), { balanceKop: 8_000_000, version: prepayAcc.version });
+    const sc = (await api('GET', p('/prepayment-scenarios'))).data.find((x: { isActive: boolean }) => x.isActive);
+    const added = await api('POST', p(`/prepayment-scenarios/${sc.id}/prepayments`), { loanId: loan.id, kind: 'one_off', amountKop: 5_000_000, date: '2026-10-05', mode: 'reduce_term' });
+    expect(added.statusCode, added.body).toBe(201);
+    const balance = async () => (await api('GET', p('/accounts'))).data.find((a: { kind: string }) => a.kind === 'prepayment').balanceKop;
+
+    const pending = (await api('GET', p('/prepayments/pending'))).data;
+    expect(pending).toHaveLength(1);
+    expect(pending[0]).toMatchObject({ date: '2026-10-05', amountKop: 5_000_000 });
+    expect(await balance()).toBe(3_000_000);
+    // повторный запрос — без двойного списания
+    await api('GET', p('/dashboard'));
+    expect(await balance()).toBe(3_000_000);
+
+    const savingsWith = (await api('GET', p('/dashboard'))).data.payoff.savingsKop;
+    // банк принял 4,5 млн — остаток и график по факту
+    expect((await api('POST', p(`/prepayments/${pending[0].id}/confirm`), { action: 'amount', amountKop: 4_500_000 })).statusCode).toBe(200);
+    expect(await balance()).toBe(3_500_000);
+    const savingsFact = (await api('GET', p('/dashboard'))).data.payoff.savingsKop;
+    expect(savingsFact).toBeLessThan(savingsWith);
+    expect((await api('GET', p('/prepayments/pending'))).data).toHaveLength(0);
+  });
+
+  it('«не вносил» — деньги возвращаются на счёт, досрочка уходит из расчёта', async () => {
+    const s = await register(ctx);
+    const api = client(ctx, s.token);
+    const p = (x: string) => `/households/${s.householdId}${x}`;
+    const loan = (await api('POST', p('/loans'), { name: 'Ипотека', principalKop: 500_000_000, annualRate: '16', termMonths: 240, type: 'annuity', issueDate: '2026-06-15' })).data;
+    const sc = (await api('GET', p('/prepayment-scenarios'))).data.find((x: { isActive: boolean }) => x.isActive);
+    await api('POST', p(`/prepayment-scenarios/${sc.id}/prepayments`), { loanId: loan.id, kind: 'one_off', amountKop: 5_000_000, date: '2026-10-05', mode: 'reduce_term' });
+    const pending = (await api('GET', p('/prepayments/pending'))).data;
+    await api('POST', p(`/prepayments/${pending[0].id}/confirm`), { action: 'skip' });
+    expect((await api('GET', p('/dashboard'))).data.payoff.savingsKop).toBe(0);
+    const list = (await api('GET', p('/prepayment-scenarios'))).data.find((x: { isActive: boolean }) => x.isActive).prepayments;
+    expect(list[0].status).toBe('skipped');
+  });
+});

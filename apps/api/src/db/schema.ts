@@ -35,6 +35,8 @@ export const users = pgTable('users', {
   email: text('email').notNull().unique(),
   name: text('name').notNull(),
   passwordHash: text('password_hash').notNull(),
+  /** Режим интерфейса: simple — главное без лишних настроек, advanced — всё. Общий для веба и мобилки. */
+  uiMode: text('ui_mode').notNull().default('simple'),
   emailVerifiedAt: ts('email_verified_at'),
   failedLogins: integer('failed_logins').notNull().default(0),
   lockedUntil: ts('locked_until'),
@@ -229,12 +231,21 @@ export const expenses = pgTable(
   (t) => [index('expenses_household').on(t.householdId)],
 );
 
+/** Категории бюджета на жизнь с планом на месяц (коммуналка, продукты, кружки…). */
 export const livingExpenses = pgTable('living_expenses', {
   id: id(),
   householdId: householdRef(),
   name: text('name').notNull(),
   amountKop: kop('amount_kop').notNull(),
   kind: text('kind'),
+  essential: boolean('essential').notNull().default(true),
+  group: text('group'),
+  catalogKey: text('catalog_key'),
+  sort: integer('sort').notNull().default(0),
+  /** День автоплатежа (1–31) — трата на сумму плана записывается сама. */
+  autoPayDay: integer('auto_pay_day'),
+  /** За какой месяц (YYYY-MM) автоплатёж уже обработан. */
+  autoPayLastMonth: text('auto_pay_last_month'),
   startDate: day('start_date'),
   endDate: day('end_date'),
   endsAtKeys: boolean('ends_at_keys').notNull().default(false),
@@ -268,6 +279,25 @@ export const incomes = pgTable(
   (t) => [index('incomes_household').on(t.householdId)],
 );
 
+/** Фактические траты по категориям бюджета. */
+export const spendings = pgTable(
+  'spendings',
+  {
+    id: id(),
+    householdId: householdRef(),
+    categoryId: uuid('category_id').references(() => livingExpenses.id, { onDelete: 'set null' }),
+    date: day('date').notNull(),
+    amountKop: kop('amount_kop').notNull(),
+    note: text('note'),
+    /** manual — внесена вручную, plan — кнопка «Оплачено», auto — автоплатёж. */
+    source: text('source').notNull().default('manual'),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    version: version(),
+    ...timestamps,
+  },
+  (t) => [index('spendings_household_date').on(t.householdId, t.date)],
+);
+
 export const accounts = pgTable('accounts', {
   id: id(),
   householdId: householdRef(),
@@ -295,6 +325,24 @@ export const transfersDone = pgTable(
   (t) => [uniqueIndex('transfers_done_unique').on(t.householdId, t.date, t.incomeId, t.accountId)],
 );
 
+/** Сколько фактически отложено на цель (подушка, досрочка…) за месяц — рядом с расчётным планом. */
+export const goalContributions = pgTable(
+  'goal_contributions',
+  {
+    id: id(),
+    householdId: householdRef(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    month: text('month').notNull(),
+    amountKop: kop('amount_kop').notNull(),
+    updatedBy: uuid('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    version: version(),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex('goal_contributions_account_month').on(t.accountId, t.month)],
+);
+
 export const prepaymentScenarios = pgTable('prepayment_scenarios', {
   id: id(),
   householdId: householdRef(),
@@ -317,6 +365,13 @@ export const prepayments = pgTable('prepayments', {
   endDate: day('end_date'),
   mode: text('mode').notNull(),
   source: text('source').notNull().default('manual'),
+  /** planned — впереди; done — дата наступила, сумма списана со счёта «Досрочка»; skipped — не вносили. */
+  status: text('status').notNull().default('planned'),
+  /** Сколько фактически принял банк (если отличается от плана). */
+  factAmountKop: kop('fact_amount_kop'),
+  executedAt: ts('executed_at'),
+  /** Пользователь подтвердил, что внёс (или поправил сумму). */
+  confirmed: boolean('confirmed').notNull().default(false),
   version: version(),
   ...timestamps,
 });

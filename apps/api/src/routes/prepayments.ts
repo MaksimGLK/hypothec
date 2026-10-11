@@ -1,5 +1,6 @@
 import {
   CompareScenariosRequest,
+  ConfirmPrepaymentRequest,
   CreatePrepaymentRequest,
   CreatePrepaymentScenarioRequest,
   PrepaymentScenario,
@@ -16,6 +17,7 @@ import type { Db, DbOrTx } from '../db/client.js';
 import * as s from '../db/schema.js';
 import { AppError, conflict, notFound } from '../lib/errors.js';
 import { getPlan, loadPlanInput, toPrepaymentInput } from '../services/plan.js';
+import { adjustPrepaymentAccount, applyDuePrepayments } from '../services/prepayment-execution.js';
 import { assertOwned, IdParams, mutate, stripNulls } from './helpers.js';
 
 const MAX_SCENARIOS = 10;
@@ -31,7 +33,9 @@ export async function loadScenarios(db: Db, householdId: string): Promise<z.infe
     isActive: sc.isActive,
     color: sc.color,
     version: sc.version,
-    prepayments: pps.filter((p) => p.scenarioId === sc.id).map((p) => stripNulls({ ...toPrepaymentInput(p), version: p.version }) as never),
+    prepayments: pps
+      .filter((p) => p.scenarioId === sc.id)
+      .map((p) => stripNulls({ ...toPrepaymentInput(p), amountKop: p.amountKop, factAmountKop: p.factAmountKop, status: p.status, confirmed: p.confirmed, version: p.version }) as never),
   }));
 }
 
@@ -73,7 +77,54 @@ export const prepaymentRoutes: FastifyPluginAsyncZod = async (app) => {
   const { db } = deps;
   const tags = ['prepayment'];
 
-  app.get('/prepayment-scenarios', { schema: { tags, summary: 'Сценарии досрочки', response: { 200: z.array(PrepaymentScenario) } } }, (req) => loadScenarios(db, req.household.id));
+  app.get('/prepayment-scenarios', { schema: { tags, summary: 'Сценарии досрочки', response: { 200: z.array(PrepaymentScenario) } } }, async (req) => {
+    await applyDuePrepayments(deps, req.household.id);
+    return loadScenarios(db, req.household.id);
+  });
+
+  /** Ждут подтверждения: дата досрочки наступила, сумма списана со счёта «Досрочка». */
+  app.get('/prepayments/pending', { schema: { tags, summary: 'Досрочки, которые нужно подтвердить' } }, async (req) => {
+    await applyDuePrepayments(deps, req.household.id);
+    const rows = await db
+      .select()
+      .from(s.prepayments)
+      .where(and(eq(s.prepayments.householdId, req.household.id), eq(s.prepayments.status, 'done'), eq(s.prepayments.confirmed, false)));
+    return rows.map((r) => ({ id: r.id, scenarioId: r.scenarioId, date: r.date, amountKop: r.factAmountKop ?? r.amountKop, planKop: r.amountKop }));
+  });
+
+  /**
+   * Подтверждение досрочки: внёс; банк принял другую сумму; не вносил; остаток счёта уже поправил сам.
+   * Остаток счёта «Досрочка» и график кредита пересчитываются по факту.
+   */
+  app.post(
+    '/prepayments/:id/confirm',
+    { schema: { tags, summary: 'Подтвердить досрочку', params: IdParams, body: ConfirmPrepaymentRequest } },
+    async (req) => {
+      const { action, amountKop } = req.body;
+      const result = await mutate(req, 'prepayment', `confirm:${action}`, async (tx) => {
+        const [p] = await tx.select().from(s.prepayments).where(and(eq(s.prepayments.id, req.params.id), eq(s.prepayments.householdId, req.household.id)));
+        if (!p) throw notFound('Досрочка');
+        if (p.status !== 'done') throw new AppError('conflict', 'Эта досрочка ещё не наступила или уже отменена');
+        const current = p.factAmountKop ?? p.amountKop;
+        if (action === 'confirm') {
+          await tx.update(s.prepayments).set({ confirmed: true }).where(eq(s.prepayments.id, p.id));
+        } else if (action === 'amount') {
+          if (!amountKop) throw new AppError('validation_error', 'Укажите сумму, которую принял банк');
+          await adjustPrepaymentAccount(tx, req.household.id, -(amountKop - current));
+          await tx.update(s.prepayments).set({ factAmountKop: amountKop, confirmed: true }).where(eq(s.prepayments.id, p.id));
+        } else if (action === 'skip') {
+          await adjustPrepaymentAccount(tx, req.household.id, current);
+          await tx.update(s.prepayments).set({ status: 'skipped', confirmed: true }).where(eq(s.prepayments.id, p.id));
+        } else {
+          // внёс, но остаток счёта уже поправил вручную — возвращаем списанное, чтобы не вычесть дважды
+          await adjustPrepaymentAccount(tx, req.household.id, current);
+          await tx.update(s.prepayments).set({ confirmed: true }).where(eq(s.prepayments.id, p.id));
+        }
+        return { id: p.id };
+      });
+      return { ...result, action };
+    },
+  );
 
   app.post(
     '/prepayment-scenarios',

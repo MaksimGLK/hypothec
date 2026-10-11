@@ -13,7 +13,8 @@ import {
   type RecommendationRule,
   type TaxMemberInput,
 } from '@hypothec/core';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, gte } from 'drizzle-orm';
+import { addMonths } from '@hypothec/core';
 import { todayInMoscow } from '../config.js';
 import type { Db } from '../db/client.js';
 import * as s from '../db/schema.js';
@@ -45,7 +46,8 @@ export function toPrepaymentInput(r: Row<typeof s.prepayments>): PrepaymentInput
     id: r.id,
     loanId: r.loanId,
     kind: r.kind as PrepaymentInput['kind'],
-    amountKop: r.amountKop,
+    // если банк принял другую сумму — график считается по факту
+    amountKop: r.factAmountKop ?? r.amountKop,
     date: opt(r.date),
     startDate: opt(r.startDate),
     endDate: opt(r.endDate),
@@ -100,6 +102,12 @@ export function toLivingInput(r: Row<typeof s.livingExpenses>): LivingExpenseInp
     name: r.name,
     amountKop: r.amountKop,
     kind: (r.kind ?? undefined) as LivingExpenseInput['kind'],
+    essential: r.essential,
+    group: r.group,
+    catalogKey: r.catalogKey,
+    sort: r.sort,
+    autoPayDay: r.autoPayDay,
+    autoPayLastMonth: r.autoPayLastMonth,
     startDate: r.startDate,
     endDate: r.endDate,
     endsAtKeys: r.endsAtKeys,
@@ -139,7 +147,8 @@ export function resetRulesCache() {
 export async function loadPlanInput(deps: AppDeps, householdId: string, overrides: Partial<PlanInput> = {}): Promise<{ input: PlanInput; revision: number }> {
   const { db } = deps;
   const byHousehold = <T extends { householdId: unknown }>(t: T) => eq(t.householdId as never, householdId);
-  const [[household], [scenario], stageRows, loanRows, scenarioRows, prepaymentRows, incomeRows, expenseRows, livingRows, accountRows, states, rules] = await Promise.all([
+  const since = addMonths(todayInMoscow(deps.now()), -3).slice(0, 7) + '-01';
+  const [[household], [scenario], stageRows, loanRows, scenarioRows, prepaymentRows, incomeRows, expenseRows, livingRows, accountRows, states, rules, spendingRows] = await Promise.all([
     db.select().from(s.households).where(eq(s.households.id, householdId)).limit(1),
     db.select().from(s.scenarios).where(byHousehold(s.scenarios)).limit(1),
     db.select().from(s.stages).where(byHousehold(s.stages)).orderBy(asc(s.stages.sort)),
@@ -148,10 +157,12 @@ export async function loadPlanInput(deps: AppDeps, householdId: string, override
     db.select().from(s.prepayments).where(byHousehold(s.prepayments)),
     db.select().from(s.incomes).where(byHousehold(s.incomes)).orderBy(asc(s.incomes.createdAt)),
     db.select().from(s.expenses).where(byHousehold(s.expenses)).orderBy(asc(s.expenses.createdAt)),
-    db.select().from(s.livingExpenses).where(byHousehold(s.livingExpenses)),
+    db.select().from(s.livingExpenses).where(byHousehold(s.livingExpenses)).orderBy(asc(s.livingExpenses.sort)),
     db.select().from(s.accounts).where(byHousehold(s.accounts)).orderBy(asc(s.accounts.sort)),
     db.select().from(s.recommendationStates).where(byHousehold(s.recommendationStates)),
     loadRules(db, deps.now()),
+    // траты за последние месяцы — для советов о бюджете
+    db.select().from(s.spendings).where(and(eq(s.spendings.householdId, householdId), gte(s.spendings.date, since))),
   ]);
   if (!household) throw new Error(`household ${householdId} not found`);
 
@@ -174,11 +185,12 @@ export async function loadPlanInput(deps: AppDeps, householdId: string, override
       id: sc.id,
       name: sc.name,
       isActive: sc.isActive,
-      prepayments: prepaymentRows.filter((p) => p.scenarioId === sc.id).map(toPrepaymentInput),
+      prepayments: prepaymentRows.filter((p) => p.scenarioId === sc.id && p.status !== 'skipped').map(toPrepaymentInput),
     })),
     incomes: incomeRows.map(toIncomeInput),
     expenses: expenseRows.map(toExpenseInput),
     living: livingRows.map(toLivingInput),
+    spendings: spendingRows.map((r) => ({ id: r.id, categoryId: r.categoryId, date: r.date, amountKop: r.amountKop, note: r.note })),
     accounts: accountRows.map(toAccountInput),
     taxMembers: (household.taxMembers as TaxMemberInput[]) ?? [],
     settings: settingsOf(household),

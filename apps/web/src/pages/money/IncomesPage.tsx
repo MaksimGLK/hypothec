@@ -8,9 +8,11 @@ import { Badge, Button, Card, ConfirmButton, Empty, ErrorBox, Field, Input, Moda
 import { Tabs } from '../../layout/AppLayout.js';
 
 export const MONEY_TABS = [
-  { to: '/money/allocation', label: 'Счета и переводы' },
+  { to: '/month', label: 'Мой месяц' },
+  { to: '/budget', label: 'Бюджет' },
   { to: '/money/incomes', label: 'Доходы' },
-  { to: '/money/expenses', label: 'Расходы' },
+  { to: '/money/allocation', label: 'Счета и переводы', advanced: true },
+  { to: '/money/expenses', label: 'Расходы сделки', advanced: true },
 ];
 
 const PERIOD_LABEL: Record<IncomeDto['periodicity'], string> = { monthly: 'каждый месяц', quarterly: 'раз в квартал', yearly: 'раз в год', once: 'разово' };

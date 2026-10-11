@@ -27,7 +27,7 @@ const LOCK_AFTER = 10;
 const LOCK_MINUTES = 15;
 
 export function toUserDto(u: typeof users.$inferSelect): z.infer<typeof User> {
-  return { id: u.id, email: u.email, name: u.name, emailVerified: Boolean(u.emailVerifiedAt), createdAt: u.createdAt.toISOString() };
+  return { id: u.id, email: u.email, name: u.name, emailVerified: Boolean(u.emailVerifiedAt), uiMode: u.uiMode === 'advanced' ? 'advanced' : 'simple', createdAt: u.createdAt.toISOString() };
 }
 
 const authRateLimit = { rateLimit: { max: 10, timeWindow: '1 minute' } };

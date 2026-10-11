@@ -1,10 +1,10 @@
-import { addMonths, endOfMonth, formatMonthRu, type GoalStep, startOfMonth } from '@hypothec/core';
+import { addMonths, endOfMonth, formatDateRu, formatMonthRu, type GoalStep, startOfMonth } from '@hypothec/core';
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Pencil, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { useHh, useHhMutation } from '../../api/household.js';
 import type { AccountDto, AllocationCalendarDto, DashboardDto, SettingsDto } from '../../api/types.js';
 import { LessonsFor, Term } from '../../components/learning.js';
-import { Badge, Button, Card, cx, DateText, ErrorBox, Field, Input, Modal, Money, MoneyInput, PageHeader, Progress, Select, Spinner, Switch } from '../../components/ui/index.js';
+import { Badge, Button, Card, cx, DateText, ErrorBox, Field, Input, Modal, Money, MoneyInput, PageHeader, Progress, Segmented, Select, Spinner, Switch } from '../../components/ui/index.js';
 import { Tabs } from '../../layout/AppLayout.js';
 import { MONEY_TABS } from './IncomesPage.js';
 
@@ -108,6 +108,7 @@ function TransferCalendar({ data }: { data: AllocationCalendarDto }) {
           </p>
         </Card>
       ))}
+      <GoalsTimeline goals={data.goals} />
       {data.transfers.length === 0 && <p className="text-sm text-ink-2">В этом месяце поступлений нет.</p>}
       {data.transfers.map((t) => {
         const lines = t.lines.filter((l) => l.purpose !== 'free');
@@ -124,20 +125,25 @@ function TransferCalendar({ data }: { data: AllocationCalendarDto }) {
             </div>
             <ul className="mt-3 space-y-2">
               {lines.map((l) => (
-                <li key={l.accountId + l.label} className="flex items-center gap-3 text-sm">
-                  <input
-                    type="checkbox"
-                    aria-label={`Перевёл ${l.label}`}
-                    className="size-4 accent-[var(--primary)]"
-                    checked={l.done}
-                    disabled={l.done}
-                    onChange={() => mark.mutate({ date: t.date, incomeId: t.incomeId, accountId: l.accountId, amountKop: l.amountKop })}
-                  />
-                  <span className={cx('flex-1', l.done && 'text-ink-2 line-through')}>
-                    → {l.label}
-                    {l.purpose === 'obligation' && l.accountKind === 'mortgage' && <span className="text-muted"> (к платежу)</span>}
-                  </span>
-                  <Money kop={l.amountKop} className="font-medium" />
+                <li key={l.accountId + l.label} className="text-sm">
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      aria-label={`Перевёл ${l.label}`}
+                      className="size-4 accent-[var(--primary)]"
+                      checked={l.done}
+                      disabled={l.done}
+                      onChange={() => mark.mutate({ date: t.date, incomeId: t.incomeId, accountId: l.accountId, amountKop: l.amountKop })}
+                    />
+                    <span className={cx('flex-1', l.done && 'text-ink-2 line-through')}>
+                      → {l.label}
+                      {l.purpose === 'obligation' && l.accountKind === 'mortgage' && <span className="text-muted"> (к платежу)</span>}
+                    </span>
+                    <Money kop={l.amountKop} className="font-medium" />
+                  </div>
+                  {l.parts && l.parts.length > 0 && (
+                    <p className="mt-0.5 pl-7 text-xs text-muted">{l.parts.map((p) => `${p.name} ${Math.round(p.amountKop / 100).toLocaleString('ru-RU')} ₽`).join(' · ')}</p>
+                  )}
                 </li>
               ))}
               {free && free.amountKop > 0 && (
@@ -167,12 +173,66 @@ function TransferCalendar({ data }: { data: AllocationCalendarDto }) {
   );
 }
 
+const GOAL_TIMELINE_LABEL: Record<GoalStep['target'], string> = {
+  min_cushion: 'Подушка: минимум',
+  priority_setup: 'Обустройство: самое нужное',
+  full_cushion: 'Подушка полностью',
+  setup: 'Обустройство',
+  prepayment: 'Досрочка',
+  custom: 'Своя цель',
+};
+
+/** Когда на каждую цель пойдут деньги и когда она соберётся — чтобы было понятно, почему в этом месяце, например, нет досрочки. */
+function GoalsTimeline({ goals }: { goals: AllocationCalendarDto['goals'] }) {
+  const settings = useHh<SettingsDto>('/settings');
+  const split = settings.data?.allocation.distribution === 'split';
+  const shareOf = (g: AllocationCalendarDto['goals'][number]) =>
+    settings.data?.allocation.steps.find((st) => st.target === g.target && (g.target !== 'custom' || st.accountId === g.accountId))?.sharePercent ?? 0;
+  const visible = goals.filter((g) => g.targetKop !== 0);
+  if (!visible.length) return null;
+  const fmt = (d: string) => formatDateRu(d, { year: d.slice(0, 4) !== new Date().toISOString().slice(0, 4) });
+  return (
+    <Card tone="info" title="Когда начнутся цели">
+      <ol className="space-y-1.5 text-sm">
+        {visible.map((g, i) => {
+          const prev = visible[i - 1];
+          return (
+            <li key={g.target + g.accountId}>
+              <span className="font-medium">
+                {split ? '' : `${i + 1}. `}
+                {GOAL_TIMELINE_LABEL[g.target]}
+                {split ? ` — ${shareOf(g)}%` : ''}
+              </span>
+              {g.targetKop ? <span className="text-ink-2"> — <Money kop={g.targetKop} /></span> : null}
+              <span className="block text-ink-2">
+                {g.startDate ? (
+                  <>
+                    {g.startDate <= new Date().toISOString().slice(0, 10) ? 'деньги идут уже сейчас' : <>деньги пойдут с {fmt(g.startDate)}{!split && prev?.reachDate && prev.reachDate <= g.startDate ? <>, когда соберётся «{GOAL_TIMELINE_LABEL[prev.target]}»</> : null}</>}
+                    {g.reachDate && g.targetKop ? <>, соберётся к {fmt(g.reachDate)}</> : null}
+                  </>
+                ) : (
+                  'в ближайшие годы денег на это не останется — проверьте доходы и порядок целей'
+                )}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+      <p className="mt-2 text-xs text-muted">
+        {split ? 'Деньги, оставшиеся после обязательных платежей, делятся между целями по долям.' : 'Деньги, оставшиеся после обязательных платежей, идут на цели по очереди.'} Настроить — ниже, в «Правилах распределения».
+      </p>
+    </Card>
+  );
+}
+
 function RulesEditor() {
   const settings = useHh<SettingsDto>('/settings');
-  const save = useHhMutation<Record<string, unknown>>('PATCH', '/settings', { success: 'Порядок сохранён — план пересчитан' });
+  const save = useHhMutation<Record<string, unknown>>('PATCH', '/settings', { success: 'Сохранено — план пересчитан' });
+  const [shares, setShares] = useState<Record<number, string>>({});
   if (!settings.data) return null;
   const s = settings.data;
   const steps = s.allocation.steps;
+  const split = s.allocation.distribution === 'split';
   const patch = (allocation: Partial<SettingsDto['allocation']>) => save.mutate({ allocation: { ...s.allocation, ...allocation }, version: s.version });
   const move = (i: number, d: -1 | 1) => {
     const next = [...steps];
@@ -180,18 +240,66 @@ function RulesEditor() {
     next.splice(i + d, 0, x!);
     patch({ steps: next });
   };
+  const setMode = (mode: 'sequential' | 'split') => {
+    if (mode === 'split' && !steps.some((x) => x.enabled && (x.sharePercent ?? 0) > 0)) {
+      // первое включение: делим поровну между включёнными целями
+      const enabled = steps.filter((x) => x.enabled).length || 1;
+      const each = Math.floor(100 / enabled);
+      let rest = 100 - each * enabled;
+      patch({ distribution: mode, steps: steps.map((x) => (x.enabled ? { ...x, sharePercent: each + (rest-- > 0 ? 1 : 0) } : x)) });
+    } else patch({ distribution: mode });
+  };
+  const totalShare = steps.filter((x) => x.enabled).reduce((sum, x) => sum + (x.sharePercent ?? 0), 0);
+  const commitShare = (i: number) => {
+    const raw = shares[i];
+    if (raw === undefined) return;
+    const v = Math.max(0, Math.min(100, Number(raw.replace(/\D/g, '')) || 0));
+    setShares(({ [i]: _drop, ...rest }) => rest);
+    patch({ steps: steps.map((x, j) => (j === i ? { ...x, sharePercent: v } : x)) });
+  };
+
   return (
     <Card title="Правила распределения">
       <div className="space-y-1">
         <Switch checked={!s.allocation.useUnstableForObligations} onChange={(v) => patch({ useUnstableForObligations: !v })} label="Ипотеку и обязательные расходы — только из стабильных денег" />
         <Switch checked={s.allocation.annualReserveEnabled} onChange={(v) => patch({ annualReserveEnabled: v })} label="Копить на ежегодные платежи (страховку) помесячно" />
       </div>
-      <h3 className="mt-4 mb-2 text-sm font-medium">Порядок целей для оставшихся денег</h3>
-      <ol className="space-y-2">
+
+      <h3 className="mt-4 mb-2 text-sm font-medium">Как делить деньги, оставшиеся после обязательных платежей</h3>
+      <Segmented
+        label="Способ распределения"
+        value={split ? 'split' : 'sequential'}
+        onChange={setMode}
+        options={[
+          { value: 'sequential', label: 'По очереди' },
+          { value: 'split', label: 'Долями' },
+        ]}
+      />
+      <p className="mt-1.5 text-xs text-muted">
+        {split
+          ? 'Каждое поступление делится между целями по процентам. Когда цель собрана, её доля переходит к остальным.'
+          : 'Следующая цель получает деньги, когда собрана предыдущая. Самый осторожный вариант: сначала подушка, потом остальное.'}
+      </p>
+
+      <ol className="mt-3 space-y-2">
         {steps.map((st, i) => (
           <li key={st.target + (st.accountId ?? '')} className={cx('flex flex-wrap items-center gap-2 rounded-xl border border-border p-2', !st.enabled && 'opacity-50')}>
-            <span className="w-6 text-center text-sm text-muted">{i + 1}</span>
+            <span className="w-6 text-center text-sm text-muted">{split ? '•' : i + 1}</span>
             <span className="min-w-0 flex-1 text-sm font-medium">{STEP_LABEL[st.target]}</span>
+            {split && st.enabled && (
+              <label className="flex items-center gap-1 text-sm">
+                <Input
+                  aria-label={`Доля: ${STEP_LABEL[st.target]}`}
+                  inputMode="numeric"
+                  className="h-9 w-16 text-right"
+                  value={shares[i] ?? String(st.sharePercent ?? 0)}
+                  onChange={(e) => setShares({ ...shares, [i]: e.target.value })}
+                  onBlur={() => commitShare(i)}
+                  onKeyDown={(e) => e.key === 'Enter' && commitShare(i)}
+                />
+                %
+              </label>
+            )}
             <Select aria-label="Источник денег" className="order-last h-9 w-full text-sm sm:order-none sm:w-auto" value={st.sources} onChange={(e) => patch({ steps: steps.map((x, j) => (j === i ? { ...x, sources: e.target.value as GoalStep['sources'] } : x)) })}>
               {Object.entries(SOURCE_LABEL).map(([k, l]) => (
                 <option key={k} value={k}>
@@ -199,17 +307,24 @@ function RulesEditor() {
                 </option>
               ))}
             </Select>
-            <Button size="sm" variant="ghost" aria-label="Выше" disabled={i === 0} onClick={() => move(i, -1)}>
-              <ArrowUp className="size-4" />
-            </Button>
-            <Button size="sm" variant="ghost" aria-label="Ниже" disabled={i === steps.length - 1} onClick={() => move(i, 1)}>
-              <ArrowDown className="size-4" />
-            </Button>
+            {!split && (
+              <>
+                <Button size="sm" variant="ghost" aria-label="Выше" disabled={i === 0} onClick={() => move(i, -1)}>
+                  <ArrowUp className="size-4" />
+                </Button>
+                <Button size="sm" variant="ghost" aria-label="Ниже" disabled={i === steps.length - 1} onClick={() => move(i, 1)}>
+                  <ArrowDown className="size-4" />
+                </Button>
+              </>
+            )}
             <input type="checkbox" aria-label="Включено" className="size-4 accent-[var(--primary)]" checked={st.enabled} onChange={(e) => patch({ steps: steps.map((x, j) => (j === i ? { ...x, enabled: e.target.checked } : x)) })} />
           </li>
         ))}
       </ol>
-      <p className="mt-3 text-xs text-muted">По умолчанию: сначала минимальная подушка, потом самое нужное для новой квартиры, полная подушка, остальное обустройство и только потом досрочка.</p>
+      {split && totalShare !== 100 && (
+        <p className="mt-2 text-xs text-warn">Сумма долей — {totalShare}%. Делим пропорционально: так тоже работает, но 100% нагляднее.</p>
+      )}
+      {!split && <p className="mt-3 text-xs text-muted">По умолчанию: сначала минимальная подушка, потом самое нужное для новой квартиры, полная подушка, остальное обустройство и только потом досрочка.</p>}
     </Card>
   );
 }

@@ -1,6 +1,8 @@
 import { addMonths, daysBetween, type IsoDate, monthsBetween } from '../date/date.js';
 import { expandExpenses } from '../expenses/expenses.js';
 import { stableMonthlyIncome } from '../income/income.js';
+import { budgetMonth } from '../budget/budget.js';
+import { livingMonthlyAt } from '../expenses/expenses.js';
 import { D } from '../money/money.js';
 import type { PlanContext } from '../projection/types.js';
 import type { Facts } from './jsonlogic.js';
@@ -37,6 +39,10 @@ export const FACT_DESCRIPTIONS: Record<string, string> = {
   depositBeforeApproval: 'Задаток запланирован до одобрения ипотеки',
   annualWithoutReserveKop: 'Ежегодные платежи без помесячного резерва, коп. в год',
   freedMonthlyKop: 'Освободившаяся сумма в месяц (рост дохода или конец аренды), коп.',
+  livingPlanKop: 'План расходов на жизнь в этом месяце, коп.',
+  stableIncomeExistsKop: 'Стабильный доход в месяц (для проверки, заполнен ли бюджет), коп.',
+  lastMonthTracked: 'В прошлом месяце вносились траты',
+  lastMonthOverspendKop: 'Перерасход бюджета в прошлом месяце, коп.',
 };
 
 export function computeFacts(ctx: PlanContext): Facts {
@@ -144,8 +150,17 @@ export function computeFacts(ctx: PlanContext): Facts {
     if (d >= -30 && d <= 60) freed += l.amountKop;
   }
 
+  const lastMonth = addMonths(today, -1).slice(0, 7);
+  const spendings = input.spendings ?? [];
+  const lastBudget = budgetMonth(input.living, spendings, lastMonth, today, { keysDate: ctx.keysDate });
+  const lastMonthTracked = spendings.some((sp) => sp.date.startsWith(lastMonth));
+
   return {
     hasLoan: ctx.loans.length > 0,
+    livingPlanKop: livingMonthlyAt(input.living, today, { keysDate: ctx.keysDate }),
+    stableIncomeExistsKop: stableIncome,
+    lastMonthTracked,
+    lastMonthOverspendKop: lastMonthTracked ? lastBudget.overspendKop : 0,
     cushionKop: cushion.currentKop,
     cushionMonths: Number.isFinite(cushion.monthsCovered) ? cushion.monthsCovered : 999,
     cushionTargetMonths: cushion.targetMonths,

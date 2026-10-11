@@ -28,12 +28,25 @@ export interface ExpenseInput {
   atKeys?: boolean;
 }
 
-/** Ежемесячные траты семьи (еда, коммуналка, транспорт, аренда до переезда). */
+/**
+ * Категория бюджета на жизнь с планом на месяц: коммуналка, продукты, кружки, аренда до переезда.
+ * Факт по категории — сумма трат (SpendingInput) за месяц.
+ */
 export interface LivingExpenseInput {
   id: string;
   name: string;
+  /** План на месяц. */
   amountKop: Kop;
   kind?: 'rent' | 'other';
+  /** Обязательная трата: входит в подушку и стресс-тест. Необязательные (кафе, развлечения) в трудный месяц можно урезать. */
+  essential?: boolean;
+  group?: string | null;
+  catalogKey?: string | null;
+  sort?: number;
+  /** Автоплатёж: в этот день месяца трата на сумму плана записывается сама (коммуналка, связь, аренда). */
+  autoPayDay?: number | null;
+  /** Месяц `YYYY-MM`, за который автоплатёж уже обработан — чтобы не создавать его повторно. */
+  autoPayLastMonth?: string | null;
   startDate?: IsoDate | null;
   endDate?: IsoDate | null;
   /** Например, аренда заканчивается после переезда. */
@@ -116,9 +129,12 @@ export function livingActiveOn(l: LivingExpenseInput, date: IsoDate, ctx: Expens
   return (!start || start <= date) && (!end || end >= date);
 }
 
-/** Базовые траты семьи в месяц на дату. */
-export function livingMonthlyAt(living: readonly LivingExpenseInput[], date: IsoDate, ctx: ExpenseContext = {}): Kop {
-  return living.filter((l) => livingActiveOn(l, date, ctx)).reduce((s, l) => s + l.amountKop, 0);
+/** Плановые траты семьи в месяц на дату (только обязательные — с essentialOnly). */
+export function livingMonthlyAt(living: readonly LivingExpenseInput[], date: IsoDate, ctx: ExpenseContext = {}, filter: 'all' | 'essential' | 'flexible' = 'all'): Kop {
+  return living
+    .filter((l) => livingActiveOn(l, date, ctx))
+    .filter((l) => filter === 'all' || (filter === 'essential' ? l.essential !== false : l.essential === false))
+    .reduce((s, l) => s + l.amountKop, 0);
 }
 
 export interface ExpenseTotals {

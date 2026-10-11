@@ -8,6 +8,34 @@
       "when": 1791467902394,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791619907734,
+      "tag": "0001_budget",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791648665288,
+      "tag": "0002_auto_pay",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791726151559,
+      "tag": "0003_goal_contributions",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791726992961,
+      "tag": "0004_prepayment_status",
+      "breakpoints": true
     }
   ]
 }

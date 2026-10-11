@@ -53,11 +53,20 @@ export const financeRoutes: FastifyPluginAsyncZod = async (app) => {
   registerCrud(app, {
     path: 'living-expenses',
     entity: 'living',
-    title: 'Ежемесячные траты',
+    title: 'Категория бюджета',
     table: s.livingExpenses,
     dto: LivingExpense,
     create: CreateLivingExpenseRequest,
     update: UpdateLivingExpenseRequest,
+    orderBy: s.livingExpenses.sort,
+    toDto: (row) => {
+      const { autoPayLastMonth: _m, ...rest } = row;
+      return stripNulls(rest);
+    },
+    validate: async (tx, hid, v, existing) => {
+      // включили автоплатёж (или сменили день) — начинаем с текущего месяца заново
+      if (v.autoPayDay !== undefined && (!existing || v.autoPayDay !== existing.autoPayDay)) v.autoPayLastMonth = null;
+    },
   });
 
   registerCrud(app, {

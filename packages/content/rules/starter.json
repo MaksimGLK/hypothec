@@ -4,238 +4,764 @@
     {
       "key": "cushion_low",
       "version": 1,
-      "when": { "and": [ { ">": [ { "fact": "monthlyObligatoryKop" }, 0 ] }, { "<": [ { "fact": "cushionMonths" }, 3 ] } ] },
-      "effect": { "calc": "cushionMonthsNow" },
+      "when": {
+        "and": [
+          {
+            ">": [
+              {
+                "fact": "monthlyObligatoryKop"
+              },
+              0
+            ]
+          },
+          {
+            "<": [
+              {
+                "fact": "cushionMonths"
+              },
+              3
+            ]
+          }
+        ]
+      },
+      "effect": {
+        "calc": "cushionMonthsNow"
+      },
       "severity": "important",
       "title": "Сначала подушка, потом досрочка",
       "text": "Сейчас подушки хватит на {{effect.months|months}} обязательных расходов. Чтобы спокойно пережить потерю дохода, нужно хотя бы 3 месяца — до минимума не хватает {{effect.details.missingToMinKop|rub}}. Пока подушка не собрана, свободные деньги лучше направлять в неё.",
       "actions": [
-        { "type": "open_screen", "label": "Открыть подушку", "payload": { "screen": "cushion" } },
-        { "type": "open_lesson", "label": "Зачем нужна подушка", "payload": { "lessonKey": "cushion" } }
+        {
+          "type": "open_screen",
+          "label": "Открыть подушку",
+          "payload": {
+            "screen": "cushion"
+          }
+        },
+        {
+          "type": "open_lesson",
+          "label": "Зачем нужна подушка",
+          "payload": {
+            "lessonKey": "cushion"
+          }
+        }
       ],
       "lessonKey": "cushion",
-      "sources": [ { "title": "Банк России, «Финансовая культура»", "url": "https://fincult.info/" } ],
+      "sources": [
+        {
+          "title": "Банк России, «Финансовая культура»",
+          "url": "https://fincult.info/"
+        }
+      ],
       "reviewedAt": "2026-10-08"
     },
     {
       "key": "prepayment_before_cushion",
       "version": 1,
-      "when": { "and": [ { "!": { "fact": "cushionFull" } }, { ">": [ { "fact": "prepaymentBeforeCushionKop" }, 0 ] } ] },
-      "effect": { "calc": "prepaymentBeforeCushion" },
+      "when": {
+        "and": [
+          {
+            "!": {
+              "fact": "cushionFull"
+            }
+          },
+          {
+            ">": [
+              {
+                "fact": "prepaymentBeforeCushionKop"
+              },
+              0
+            ]
+          }
+        ]
+      },
+      "effect": {
+        "calc": "prepaymentBeforeCushion"
+      },
       "severity": "warning",
       "title": "Досрочка раньше подушки",
       "text": "В досрочку запланировано {{effect.valueKop|rub}}, пока подушка ещё не собрана. Деньги, внесённые в погашение кредита, обратно не забрать: если пропадёт доход, платить ипотеку будет не из чего. До цели подушки осталось {{effect.details.missingKop|rub}}.",
       "actions": [
-        { "type": "apply_scenario", "label": "Сначала собрать подушку", "payload": { "patch": "prepayment_after_cushion" } },
-        { "type": "open_lesson", "label": "Как работает досрочка", "payload": { "lessonKey": "prepayment" } }
+        {
+          "type": "apply_scenario",
+          "label": "Сначала собрать подушку",
+          "payload": {
+            "patch": "prepayment_after_cushion"
+          }
+        },
+        {
+          "type": "open_lesson",
+          "label": "Как работает досрочка",
+          "payload": {
+            "lessonKey": "prepayment"
+          }
+        }
       ],
       "lessonKey": "prepayment",
-      "sources": [ { "title": "Банк России, «Финансовая культура»", "url": "https://fincult.info/" } ],
+      "sources": [
+        {
+          "title": "Банк России, «Финансовая культура»",
+          "url": "https://fincult.info/"
+        }
+      ],
       "reviewedAt": "2026-10-08"
     },
     {
       "key": "high_debt_load",
       "version": 1,
-      "when": { "and": [ { ">": [ { "fact": "stableMonthlyIncomeKop" }, 0 ] }, { ">=": [ { "fact": "dtiPercent" }, { "fact": "dtiWarnPercent" } ] } ] },
-      "effect": { "calc": "stressLargestIncome" },
+      "when": {
+        "and": [
+          {
+            ">": [
+              {
+                "fact": "stableMonthlyIncomeKop"
+              },
+              0
+            ]
+          },
+          {
+            ">=": [
+              {
+                "fact": "dtiPercent"
+              },
+              {
+                "fact": "dtiWarnPercent"
+              }
+            ]
+          }
+        ]
+      },
+      "effect": {
+        "calc": "stressLargestIncome"
+      },
       "severity": "important",
       "title": "Высокая нагрузка по кредитам",
       "text": "Платежи по кредитам — {{fact.dtiPercent|percent}} от стабильного дохода. Если пропадёт доход «{{effect.details.incomeName}}», подушки хватит примерно на {{effect.details.monthsCushionLasts|months}}. Снизить нагрузку можно большим первым взносом, меньшей суммой кредита или более длинным сроком.",
       "actions": [
-        { "type": "open_screen", "label": "Стресс-тест", "payload": { "screen": "stress_test" } }
+        {
+          "type": "open_screen",
+          "label": "Стресс-тест",
+          "payload": {
+            "screen": "stress_test"
+          }
+        }
       ],
       "lessonKey": "cushion",
-      "sources": [ { "title": "Банк России: показатель долговой нагрузки", "url": "https://www.cbr.ru/" } ],
+      "sources": [
+        {
+          "title": "Банк России: показатель долговой нагрузки",
+          "url": "https://www.cbr.ru/"
+        }
+      ],
       "reviewedAt": "2026-10-08"
     },
     {
       "key": "mortgage_from_unstable",
       "version": 1,
-      "when": { ">": [ { "fact": "mortgageUnstableGapKop" }, 0 ] },
-      "effect": { "calc": "unstableMortgageGap" },
+      "when": {
+        ">": [
+          {
+            "fact": "mortgageUnstableGapKop"
+          },
+          0
+        ]
+      },
+      "effect": {
+        "calc": "unstableMortgageGap"
+      },
       "severity": "warning",
       "title": "Ипотека зависит от нестабильных денег",
       "text": "Стабильных доходов не хватает на платёж по ипотеке: до {{effect.valueKop|rub}} приходится добирать из премий, подработки или подушки. Надёжнее, когда платёж закрывается зарплатой, а нерегулярные деньги идут на цели.",
       "actions": [
-        { "type": "open_screen", "label": "Распределение доходов", "payload": { "screen": "allocation" } }
+        {
+          "type": "open_screen",
+          "label": "Распределение доходов",
+          "payload": {
+            "screen": "allocation"
+          }
+        }
       ],
-      "sources": [ { "title": "Банк России, «Финансовая культура»", "url": "https://fincult.info/" } ],
+      "sources": [
+        {
+          "title": "Банк России, «Финансовая культура»",
+          "url": "https://fincult.info/"
+        }
+      ],
       "reviewedAt": "2026-10-08"
     },
     {
       "key": "reduce_payment_mode",
       "version": 1,
-      "when": { ">": [ { "fact": "reducePaymentCount" }, 0 ] },
-      "effect": { "calc": "reduceTermVsPayment" },
+      "when": {
+        ">": [
+          {
+            "fact": "reducePaymentCount"
+          },
+          0
+        ]
+      },
+      "effect": {
+        "calc": "reduceTermVsPayment"
+      },
       "requirePositiveEffect": true,
       "severity": "info",
       "title": "Сравните режимы досрочки",
       "text": "Вы выбрали досрочку с уменьшением платежа. С сокращением срока экономия будет на {{effect.details.diffKop|rub}} больше. Есть компромисс: уменьшить платёж, но продолжать платить прежнюю сумму — экономия {{effect.details.keepAmountSavingsKop|rub}}, а обязательный платёж ниже.",
       "actions": [
-        { "type": "apply_scenario", "label": "Посчитать компромисс", "payload": { "patch": "switch_mode", "mode": "reduce_payment_keep_amount" } },
-        { "type": "open_lesson", "label": "Срок или платёж?", "payload": { "lessonKey": "prepayment" } }
+        {
+          "type": "apply_scenario",
+          "label": "Посчитать компромисс",
+          "payload": {
+            "patch": "switch_mode",
+            "mode": "reduce_payment_keep_amount"
+          }
+        },
+        {
+          "type": "open_lesson",
+          "label": "Срок или платёж?",
+          "payload": {
+            "lessonKey": "prepayment"
+          }
+        }
       ],
       "lessonKey": "prepayment",
-      "sources": [ { "title": "Банк России: досрочное погашение кредита", "url": "https://fincult.info/" } ],
+      "sources": [
+        {
+          "title": "Банк России: досрочное погашение кредита",
+          "url": "https://fincult.info/"
+        }
+      ],
       "reviewedAt": "2026-10-08"
     },
     {
       "key": "early_prepayment",
       "version": 1,
-      "when": { "and": [ { "fact": "hasLoan" }, { "fact": "cushionFull" }, { "<": [ { "fact": "loanAgeMonths" }, 60 ] }, { "or": [ { ">": [ { "fact": "freeCashKop" }, 0 ] }, { ">": [ { "fact": "yearlyFreeKop" }, 0 ] } ] } ] },
-      "effect": { "calc": "prepayNowVsLater", "params": { "years": 5 } },
+      "when": {
+        "and": [
+          {
+            "fact": "hasLoan"
+          },
+          {
+            "fact": "cushionFull"
+          },
+          {
+            "<": [
+              {
+                "fact": "loanAgeMonths"
+              },
+              60
+            ]
+          },
+          {
+            "or": [
+              {
+                ">": [
+                  {
+                    "fact": "freeCashKop"
+                  },
+                  0
+                ]
+              },
+              {
+                ">": [
+                  {
+                    "fact": "yearlyFreeKop"
+                  },
+                  0
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "effect": {
+        "calc": "prepayNowVsLater",
+        "params": {
+          "years": 5
+        }
+      },
       "requirePositiveEffect": true,
       "severity": "info",
       "title": "Ранняя досрочка выгоднее поздней",
       "text": "{{effect.details.amountKop|rub}} в досрочку сейчас сэкономят {{effect.details.savingsNowKop|rub}} процентов, та же сумма через {{effect.details.years}} лет — {{effect.details.savingsLaterKop|rub}}. В первые годы большая часть платежа — проценты, поэтому ранняя досрочка работает сильнее.",
       "actions": [
-        { "type": "apply_scenario", "label": "Добавить в сценарий", "payload": { "patch": "add_one_off_now" } },
-        { "type": "open_lesson", "label": "Как устроен аннуитет", "payload": { "lessonKey": "annuity" } }
+        {
+          "type": "apply_scenario",
+          "label": "Добавить в сценарий",
+          "payload": {
+            "patch": "add_one_off_now"
+          }
+        },
+        {
+          "type": "open_lesson",
+          "label": "Как устроен аннуитет",
+          "payload": {
+            "lessonKey": "annuity"
+          }
+        }
       ],
       "lessonKey": "annuity",
-      "sources": [ { "title": "Банк России, «Финансовая культура»", "url": "https://fincult.info/" } ],
+      "sources": [
+        {
+          "title": "Банк России, «Финансовая культура»",
+          "url": "https://fincult.info/"
+        }
+      ],
       "reviewedAt": "2026-10-08"
     },
     {
       "key": "deposit_lower_than_loan",
       "version": 1,
-      "when": { "and": [ { "fact": "cushionFull" }, { "<": [ { "fact": "depositNetRatePercent" }, { "fact": "loanRatePercent" } ] } ] },
-      "effect": { "calc": "depositVsPrepay" },
+      "when": {
+        "and": [
+          {
+            "fact": "cushionFull"
+          },
+          {
+            "<": [
+              {
+                "fact": "depositNetRatePercent"
+              },
+              {
+                "fact": "loanRatePercent"
+              }
+            ]
+          }
+        ]
+      },
+      "effect": {
+        "calc": "depositVsPrepay"
+      },
       "requirePositiveEffect": true,
       "severity": "info",
       "title": "Досрочка выгоднее вклада",
       "text": "Вклад после налога даёт {{fact.depositNetRatePercent|percent}}, а кредит стоит {{fact.loanRatePercent|percent}}. Деньги сверх подушки выгоднее направить в досрочку: на {{effect.details.amountKop|rub}} разница около {{effect.valueKop|rub}} в год.",
       "actions": [
-        { "type": "open_screen", "label": "Сценарии досрочки", "payload": { "screen": "prepayment" } }
+        {
+          "type": "open_screen",
+          "label": "Сценарии досрочки",
+          "payload": {
+            "screen": "prepayment"
+          }
+        }
       ],
       "lessonKey": "prepayment",
-      "sources": [ { "title": "ФНС: налог на доходы по вкладам", "url": "https://www.nalog.gov.ru/" } ],
+      "sources": [
+        {
+          "title": "ФНС: налог на доходы по вкладам",
+          "url": "https://www.nalog.gov.ru/"
+        }
+      ],
       "reviewedAt": "2026-10-08"
     },
     {
       "key": "deposit_higher_than_loan",
       "version": 1,
-      "when": { ">": [ { "fact": "depositNetRatePercent" }, { "fact": "loanRatePercent" } ] },
-      "effect": { "calc": "depositVsPrepay" },
+      "when": {
+        ">": [
+          {
+            "fact": "depositNetRatePercent"
+          },
+          {
+            "fact": "loanRatePercent"
+          }
+        ]
+      },
+      "effect": {
+        "calc": "depositVsPrepay"
+      },
       "requirePositiveEffect": true,
       "severity": "info",
       "title": "Вклад сейчас выгоднее досрочки",
       "text": "Вклад после налога даёт {{fact.depositNetRatePercent|percent}} — больше ставки по кредиту {{fact.loanRatePercent|percent}}. Пока так, свободные деньги выгоднее держать на вкладе: на {{effect.details.amountKop|rub}} разница около {{effect.valueKop|rub}} в год. Ставки по вкладам меняются, а ставка по кредиту обычно нет — проверяйте раз в несколько месяцев.",
       "actions": [
-        { "type": "open_lesson", "label": "Досрочка или вклад", "payload": { "lessonKey": "prepayment" } }
+        {
+          "type": "open_lesson",
+          "label": "Досрочка или вклад",
+          "payload": {
+            "lessonKey": "prepayment"
+          }
+        }
       ],
       "lessonKey": "prepayment",
-      "sources": [ { "title": "ФНС: налог на доходы по вкладам", "url": "https://www.nalog.gov.ru/" } ],
+      "sources": [
+        {
+          "title": "ФНС: налог на доходы по вкладам",
+          "url": "https://www.nalog.gov.ru/"
+        }
+      ],
       "reviewedAt": "2026-10-08"
     },
     {
       "key": "tax_deduction_unclaimed",
       "version": 1,
-      "when": { ">": [ { "fact": "taxUnclaimedKop" }, 0 ] },
-      "effect": { "calc": "taxRefund" },
+      "when": {
+        ">": [
+          {
+            "fact": "taxUnclaimedKop"
+          },
+          0
+        ]
+      },
+      "effect": {
+        "calc": "taxRefund"
+      },
       "severity": "important",
       "title": "Можно вернуть налог",
       "text": "По вашим данным можно вернуть около {{effect.valueKop|rub}}: {{effect.details.propertyKop|rub}} с покупки и {{effect.details.interestKop|rub}} с процентов. Вычет положен каждому из супругов в пределах своих лимитов. Подать декларацию можно в году, следующем за годом регистрации собственности.",
       "actions": [
-        { "type": "add_reminder", "label": "Напомнить о декларации", "payload": { "event": "tax_declaration" } },
-        { "type": "apply_scenario", "label": "Направить вычет в досрочку", "payload": { "patch": "tax_to_prepayment" } },
-        { "type": "open_lesson", "label": "Как получить вычет", "payload": { "lessonKey": "tax_deduction" } }
+        {
+          "type": "add_reminder",
+          "label": "Напомнить о декларации",
+          "payload": {
+            "event": "tax_declaration"
+          }
+        },
+        {
+          "type": "apply_scenario",
+          "label": "Направить вычет в досрочку",
+          "payload": {
+            "patch": "tax_to_prepayment"
+          }
+        },
+        {
+          "type": "open_lesson",
+          "label": "Как получить вычет",
+          "payload": {
+            "lessonKey": "tax_deduction"
+          }
+        }
       ],
       "lessonKey": "tax_deduction",
-      "sources": [ { "title": "ФНС: имущественный налоговый вычет", "url": "https://www.nalog.gov.ru/rn77/taxation/taxes/ndfl/nalog_vichet/imush_vichet/" } ],
+      "sources": [
+        {
+          "title": "ФНС: имущественный налоговый вычет",
+          "url": "https://www.nalog.gov.ru/rn77/taxation/taxes/ndfl/nalog_vichet/imush_vichet/"
+        }
+      ],
       "reviewedAt": "2026-10-08"
     },
     {
       "key": "insurance_renewal",
       "version": 1,
-      "when": { "and": [ { ">=": [ { "fact": "daysToInsuranceRenewal" }, 0 ] }, { "<=": [ { "fact": "daysToInsuranceRenewal" }, 45 ] } ] },
-      "effect": { "calc": "insuranceRenewal" },
+      "when": {
+        "and": [
+          {
+            ">=": [
+              {
+                "fact": "daysToInsuranceRenewal"
+              },
+              0
+            ]
+          },
+          {
+            "<=": [
+              {
+                "fact": "daysToInsuranceRenewal"
+              },
+              45
+            ]
+          }
+        ]
+      },
+      "effect": {
+        "calc": "insuranceRenewal"
+      },
       "severity": "info",
-      "urgencyDays": { "fact": "daysToInsuranceRenewal" },
+      "urgencyDays": {
+        "fact": "daysToInsuranceRenewal"
+      },
       "title": "Скоро продление страховки",
       "text": "Через {{fact.daysToInsuranceRenewal|days}} продление страховки по ипотеке. Продлевать там же не обязательно: можно сравнить цены у других страховщиков, которых принимает ваш банк, и выбрать подходящий полис.",
       "actions": [
-        { "type": "add_reminder", "label": "Напомнить за неделю", "payload": { "event": "insurance", "daysBefore": 7 } },
-        { "type": "open_lesson", "label": "Право выбрать страховщика", "payload": { "lessonKey": "insurance" } }
+        {
+          "type": "add_reminder",
+          "label": "Напомнить за неделю",
+          "payload": {
+            "event": "insurance",
+            "daysBefore": 7
+          }
+        },
+        {
+          "type": "open_lesson",
+          "label": "Право выбрать страховщика",
+          "payload": {
+            "lessonKey": "insurance"
+          }
+        }
       ],
       "lessonKey": "insurance",
-      "sources": [ { "title": "Банк России: страхование при ипотеке", "url": "https://fincult.info/" } ],
+      "sources": [
+        {
+          "title": "Банк России: страхование при ипотеке",
+          "url": "https://fincult.info/"
+        }
+      ],
       "reviewedAt": "2026-10-08"
     },
     {
       "key": "refinance_check",
       "version": 1,
-      "when": { ">=": [ { "fact": "refinanceGapPercent" }, 2 ] },
-      "effect": { "calc": "refinanceBenefit" },
+      "when": {
+        ">=": [
+          {
+            "fact": "refinanceGapPercent"
+          },
+          2
+        ]
+      },
+      "effect": {
+        "calc": "refinanceBenefit"
+      },
       "requirePositiveEffect": true,
       "severity": "info",
       "title": "Посчитайте рефинансирование",
       "text": "Рыночная ставка ({{fact.marketRatePercent|percent}}) ниже вашей на {{fact.refinanceGapPercent|pp}}. Если рефинансировать на оставшийся срок, экономия после расходов — около {{effect.valueKop|rub}}. Проверьте, не потеряете ли вы льготные условия, и учтите расходы на оценку и страховку.",
       "actions": [
-        { "type": "open_lesson", "label": "Как работает рефинансирование", "payload": { "lessonKey": "refinancing" } }
+        {
+          "type": "open_lesson",
+          "label": "Как работает рефинансирование",
+          "payload": {
+            "lessonKey": "refinancing"
+          }
+        }
       ],
       "lessonKey": "refinancing",
-      "sources": [ { "title": "Банк России, «Финансовая культура»", "url": "https://fincult.info/" } ],
+      "sources": [
+        {
+          "title": "Банк России, «Финансовая культура»",
+          "url": "https://fincult.info/"
+        }
+      ],
       "reviewedAt": "2026-10-08"
     },
     {
       "key": "credit_purchases",
       "version": 1,
-      "when": { ">": [ { "fact": "creditPurchasesCount" }, 0 ] },
-      "effect": { "calc": "creditPurchaseOverpay" },
+      "when": {
+        ">": [
+          {
+            "fact": "creditPurchasesCount"
+          },
+          0
+        ]
+      },
+      "effect": {
+        "calc": "creditPurchaseOverpay"
+      },
       "requirePositiveEffect": true,
       "severity": "warning",
       "title": "Покупки в кредит при ипотеке",
       "text": "В плане есть покупки в кредит или рассрочку ({{effect.details.names}}). Переплата составит около {{effect.valueKop|rub}}. Если откладывать по {{effect.details.monthlySaveKop|rub}} в месяц на счёт «Обустройство», ту же покупку можно сделать без переплаты.",
       "actions": [
-        { "type": "open_screen", "label": "Расходы после ключей", "payload": { "screen": "expenses" } }
+        {
+          "type": "open_screen",
+          "label": "Расходы после ключей",
+          "payload": {
+            "screen": "expenses"
+          }
+        }
       ],
-      "sources": [ { "title": "Банк России: полная стоимость кредита", "url": "https://www.cbr.ru/" } ],
+      "sources": [
+        {
+          "title": "Банк России: полная стоимость кредита",
+          "url": "https://www.cbr.ru/"
+        }
+      ],
       "reviewedAt": "2026-10-08"
     },
     {
       "key": "seller_deposit_before_approval",
       "version": 1,
-      "when": { "fact": "depositBeforeApproval" },
-      "effect": { "calc": "sellerDepositRisk" },
+      "when": {
+        "fact": "depositBeforeApproval"
+      },
+      "effect": {
+        "calc": "sellerDepositRisk"
+      },
       "severity": "important",
       "title": "Задаток до одобрения ипотеки",
       "text": "Задаток {{effect.valueKop|rub}} запланирован раньше, чем банк одобрит ипотеку. Если банк откажет, задаток можно потерять. Безопаснее вносить его после одобрения, а в соглашении прописать: если банк не выдаст кредит на эту квартиру, задаток возвращается полностью.",
       "actions": [
-        { "type": "open_screen", "label": "Этапы сделки", "payload": { "screen": "stages" } },
-        { "type": "open_lesson", "label": "Типичные ошибки при покупке", "payload": { "lessonKey": "fraud" } }
+        {
+          "type": "open_screen",
+          "label": "Этапы сделки",
+          "payload": {
+            "screen": "stages"
+          }
+        },
+        {
+          "type": "open_lesson",
+          "label": "Типичные ошибки при покупке",
+          "payload": {
+            "lessonKey": "fraud"
+          }
+        }
       ],
       "lessonKey": "fraud",
-      "sources": [ { "title": "ДОМ.РФ: как безопасно купить квартиру", "url": "https://дом.рф/" } ],
+      "sources": [
+        {
+          "title": "ДОМ.РФ: как безопасно купить квартиру",
+          "url": "https://дом.рф/"
+        }
+      ],
       "reviewedAt": "2026-10-08"
     },
     {
       "key": "annual_without_reserve",
       "version": 1,
-      "when": { ">": [ { "fact": "annualWithoutReserveKop" }, 0 ] },
-      "effect": { "calc": "annualReserve" },
+      "when": {
+        ">": [
+          {
+            "fact": "annualWithoutReserveKop"
+          },
+          0
+        ]
+      },
+      "effect": {
+        "calc": "annualReserve"
+      },
       "severity": "info",
       "title": "Копите на ежегодные платежи заранее",
       "text": "Ежегодные платежи (страховка и другие) — около {{effect.details.yearlyKop|rub}} в год. Если откладывать по {{effect.details.monthlyKop|rub}} в месяц, к дате платежа деньги будут готовы и не придётся брать их из подушки.",
       "actions": [
-        { "type": "apply_scenario", "label": "Включить резерв", "payload": { "patch": "enable_annual_reserve" } }
+        {
+          "type": "apply_scenario",
+          "label": "Включить резерв",
+          "payload": {
+            "patch": "enable_annual_reserve"
+          }
+        }
       ],
-      "sources": [ { "title": "моифинансы.рф: финансовое планирование", "url": "https://моифинансы.рф/" } ],
+      "sources": [
+        {
+          "title": "моифинансы.рф: финансовое планирование",
+          "url": "https://моифинансы.рф/"
+        }
+      ],
       "reviewedAt": "2026-10-08"
     },
     {
       "key": "freed_money",
       "version": 1,
-      "when": { ">": [ { "fact": "freedMonthlyKop" }, 0 ] },
-      "effect": { "calc": "freedMoney" },
+      "when": {
+        ">": [
+          {
+            "fact": "freedMonthlyKop"
+          },
+          0
+        ]
+      },
+      "effect": {
+        "calc": "freedMoney"
+      },
       "severity": "info",
       "title": "Освободились деньги — дайте им работу",
       "text": "Освободилось {{effect.details.monthlyKop|rub}} в месяц. Если сразу направить их на цели, за год соберётся {{effect.details.yearlyKop|rub}}; в досрочке это сэкономит около {{effect.details.prepaySavingsKop|rub}} процентов. Иначе такие деньги обычно незаметно уходят на текущие траты.",
       "actions": [
-        { "type": "open_screen", "label": "Распределение доходов", "payload": { "screen": "allocation" } }
+        {
+          "type": "open_screen",
+          "label": "Распределение доходов",
+          "payload": {
+            "screen": "allocation"
+          }
+        }
       ],
-      "sources": [ { "title": "моифинансы.рф: финансовое планирование", "url": "https://моифинансы.рф/" } ],
+      "sources": [
+        {
+          "title": "моифинансы.рф: финансовое планирование",
+          "url": "https://моифинансы.рф/"
+        }
+      ],
       "reviewedAt": "2026-10-08"
+    },
+    {
+      "key": "budget_not_set",
+      "version": 1,
+      "when": {
+        "and": [
+          {
+            ">": [
+              {
+                "fact": "stableIncomeExistsKop"
+              },
+              0
+            ]
+          },
+          {
+            "==": [
+              {
+                "fact": "livingPlanKop"
+              },
+              0
+            ]
+          }
+        ]
+      },
+      "effect": {
+        "calc": "budgetMissing"
+      },
+      "severity": "important",
+      "title": "Укажите расходы на жизнь",
+      "text": "Пока не указано, сколько уходит на продукты, коммуналку, кружки и другие траты. Без этого подушка, распределение доходов и стресс-тест учитывают только ипотеку, и план выглядит лучше, чем на самом деле. Начать можно с типовых категорий — это пара минут.",
+      "actions": [
+        {
+          "type": "open_screen",
+          "label": "Заполнить бюджет",
+          "payload": {
+            "screen": "budget"
+          }
+        }
+      ],
+      "sources": [
+        {
+          "title": "моифинансы.рф: как составить семейный бюджет",
+          "url": "https://моифинансы.рф/"
+        }
+      ],
+      "reviewedAt": "2026-10-10"
+    },
+    {
+      "key": "budget_overspend",
+      "version": 1,
+      "when": {
+        "and": [
+          {
+            "fact": "lastMonthTracked"
+          },
+          {
+            ">": [
+              {
+                "fact": "lastMonthOverspendKop"
+              },
+              0
+            ]
+          }
+        ]
+      },
+      "effect": {
+        "calc": "budgetOverspend"
+      },
+      "requirePositiveEffect": true,
+      "severity": "warning",
+      "title": "Прошлый месяц — сверх плана",
+      "text": "Траты в прошлом месяце превысили план на {{effect.valueKop|rub}}, больше всего — «{{effect.details.topCategory}}». Если так и останется, за год это {{effect.details.yearlyKop|rub}}, которые не дойдут до подушки и целей. Можно поправить план на реальные цифры или найти, где сократить.",
+      "actions": [
+        {
+          "type": "open_screen",
+          "label": "Открыть бюджет",
+          "payload": {
+            "screen": "budget"
+          }
+        }
+      ],
+      "sources": [
+        {
+          "title": "Банк России, «Финансовая культура»",
+          "url": "https://fincult.info/"
+        }
+      ],
+      "reviewedAt": "2026-10-10"
     }
   ]
 }

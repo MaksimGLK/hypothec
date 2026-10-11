@@ -6,6 +6,7 @@ import { z } from 'zod';
 import * as s from '../db/schema.js';
 import { AppError, notFound } from '../lib/errors.js';
 import { getPlan, loadPlanInput } from '../services/plan.js';
+import { applyDuePrepayments } from '../services/prepayment-execution.js';
 import { IdParams } from './helpers.js';
 
 const MAX_RANGE_DAYS = 3 * 366;
@@ -41,6 +42,7 @@ export const planRoutes: FastifyPluginAsyncZod = async (app) => {
   const tags = ['plan'];
 
   app.get('/dashboard', { schema: { tags, summary: 'Главный экран одним запросом' } }, async (req, reply) => {
+    await applyDuePrepayments(deps, req.household.id);
     const { plan, revision } = await getPlan(deps, req.household.id);
     reply.header('x-household-revision', String(revision));
     return {

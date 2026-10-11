@@ -14,6 +14,7 @@ const SCREENS: Record<string, string> = {
   prepayment: '/loan/prepayment',
   expenses: '/money/expenses',
   stages: '/stages',
+  budget: '/budget',
 };
 
 const FACT_LABELS: Record<string, string> = {
@@ -40,6 +41,10 @@ const FACT_LABELS: Record<string, string> = {
   depositBeforeApproval: 'Задаток до одобрения',
   annualWithoutReserveKop: 'Ежегодные платежи без резерва',
   freedMonthlyKop: 'Освободилось в месяц',
+  livingPlanKop: 'План расходов на жизнь',
+  stableIncomeExistsKop: 'Стабильный доход в месяц',
+  lastMonthTracked: 'Траты вносились',
+  lastMonthOverspendKop: 'Перерасход за прошлый месяц',
 };
 
 function factValue(key: string, v: unknown): string {

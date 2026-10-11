@@ -168,3 +168,91 @@ describe('календарь распределения', () => {
     expect(total).toBe(rub(7_000));
   });
 });
+
+describe('исправления распределения', () => {
+  it('зарплата, пришедшая сегодня, участвует в накоплении к первому платежу', () => {
+    // сегодня 10-е, зарплата 10-го, первый платёж 15-го
+    const r = buildAllocation(input({ today: '2027-01-10', incomes: [salary('Иван', 200_000, 10)] }));
+    const first = r.transfers.find((t) => t.date === '2027-01-10')!;
+    expect(first.lines.some((l) => l.accountKind === 'mortgage')).toBe(true);
+    expect(r.deficits.filter((d) => d.kind === 'mortgage' && d.date === '2027-01-15')).toEqual([]);
+  });
+
+  it('«Жизнь» в переводах разбита по категориям бюджета', () => {
+    const r = buildAllocation(
+      input({
+        living: [
+          { id: 'u', name: 'Коммуналка', amountKop: rub(10_000) },
+          { id: 'f', name: 'Продукты', amountKop: rub(40_000) },
+          { id: 'c', name: 'Кафе', amountKop: rub(10_000), essential: false },
+        ],
+      }),
+    );
+    const feb = r.transfers.find((t) => t.date === '2027-02-10')!;
+    const life = feb.lines.find((l) => l.label === 'Жизнь')!;
+    expect(life.parts!.map((p) => p.name)).toEqual(['Коммуналка', 'Продукты']);
+    expect(life.parts!.reduce((s, p) => s + p.amountKop, 0)).toBe(life.amountKop);
+    expect(life.parts![1]!.amountKop / life.amountKop).toBeCloseTo(0.8, 2);
+    const flex = feb.lines.find((l) => l.label === 'Жизнь: необязательное')!;
+    expect(flex.parts!.map((p) => p.name)).toEqual(['Кафе']);
+  });
+
+  it('у каждой цели есть дата, когда на неё пойдут первые деньги', () => {
+    const r = buildAllocation(input());
+    const min = r.goals.find((g) => g.target === 'min_cushion')!;
+    const prepay = r.goals.find((g) => g.target === 'prepayment')!;
+    expect(min.startDate).toBe('2027-01-10');
+    expect(prepay.startDate! >= min.reachDate!).toBe(true);
+  });
+});
+
+describe('распределение долями', () => {
+  const split = (cushion: number, prepay: number) => ({
+    ...DEFAULT_ALLOCATION_SETTINGS,
+    distribution: 'split' as const,
+    steps: [
+      { target: 'full_cushion' as const, sources: 'any' as const, enabled: true, sharePercent: cushion },
+      { target: 'prepayment' as const, sources: 'any' as const, enabled: true, sharePercent: prepay },
+    ],
+  });
+  const goalLines = (r: ReturnType<typeof buildAllocation>, date: string) => r.transfers.find((t) => t.date === date)!.lines.filter((l) => l.purpose === 'goal');
+
+  it('каждое поступление делится между подушкой и досрочкой по процентам', () => {
+    const r = buildAllocation(input({ settings: split(60, 40) }));
+    const lines = goalLines(r, '2027-01-10');
+    const cushion = lines.find((l) => l.accountKind === 'cushion')!.amountKop;
+    const prepay = lines.find((l) => l.accountKind === 'prepayment')!.amountKop;
+    expect(cushion / (cushion + prepay)).toBeCloseTo(0.6, 2);
+    expect(r.goals.find((g) => g.target === 'prepayment')!.startDate).toBe('2027-01-10');
+  });
+
+  it('когда подушка собрана, её доля переходит к досрочке', () => {
+    const r = buildAllocation(input({ settings: split(60, 40) }));
+    const full = r.goals.find((g) => g.target === 'full_cushion')!;
+    expect(full.reachDate).not.toBeNull();
+    const after = r.transfers.find((t) => t.date > full.reachDate! && t.lines.some((l) => l.purpose === 'goal'))!;
+    const goals = after.lines.filter((l) => l.purpose === 'goal');
+    expect(goals.map((l) => l.accountKind)).toEqual(['prepayment']);
+    // подушка не переполняется
+    const last = r.monthlyBalances.at(-1)!;
+    const cushionAcc = r.accounts.find((a) => a.kind === 'cushion')!;
+    expect(last.balances[cushionAcc.id]).toBe(full.targetKop);
+  });
+
+  it('если подушке нужно меньше её доли — остаток сразу уходит в досрочку', () => {
+    const accounts = defaultAccounts();
+    const probe = buildAllocation(input({ settings: split(60, 40) }));
+    const target = probe.goals.find((g) => g.target === 'full_cushion')!.targetKop!;
+    const almost = accounts.map((a) => (a.kind === 'cushion' ? { ...a, balanceKop: target - rub(1_000) } : a));
+    const r = buildAllocation(input({ accounts: almost, settings: split(60, 40) }));
+    const lines = goalLines(r, '2027-01-10');
+    expect(lines.find((l) => l.accountKind === 'cushion')!.amountKop).toBe(rub(1_000));
+    const total = lines.reduce((s, l) => s + l.amountKop, 0);
+    expect(lines.find((l) => l.accountKind === 'prepayment')!.amountKop).toBe(total - rub(1_000));
+  });
+
+  it('без долей — работает по очереди', () => {
+    const r = buildAllocation(input({ settings: { ...split(0, 0) } }));
+    expect(goalLines(r, '2027-01-10').map((l) => l.accountKind)).toEqual(['cushion']);
+  });
+});

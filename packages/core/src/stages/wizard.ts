@@ -2,7 +2,8 @@ import { addDays, type IsoDate, parseDate } from '../date/date.js';
 import { type Kop, rub } from '../money/money.js';
 import { defaultAccounts, type AccountInput } from '../allocation/allocation.js';
 import { EXPENSE_CATALOG } from '../expenses/catalog.js';
-import type { ExpenseInput } from '../expenses/expenses.js';
+import type { ExpenseInput, LivingExpenseInput } from '../expenses/expenses.js';
+import { budgetCatalogItem } from '../budget/budget.js';
 import type { LoanInput } from '../loan/types.js';
 import { type HousingType, type MortgageProgram, type StageStatus, templatesFor } from './templates.js';
 
@@ -23,6 +24,8 @@ export interface WizardAnswers {
   termYears?: number;
   /** Когда хотите начать (по умолчанию — сегодня). */
   startDate?: IsoDate;
+  /** Расходы на жизнь по категориям справочника бюджета. */
+  budget?: { catalogKey: string; amountKop: Kop }[];
 }
 
 export interface StageDraft {
@@ -43,6 +46,8 @@ export interface InitialPlan {
   expenses: ExpenseInput[];
   accounts: AccountInput[];
   loan: LoanInput;
+  /** Категории бюджета на жизнь из ответов мастера. */
+  living: LivingExpenseInput[];
   keysDate: IsoDate;
   dealDate: IsoDate;
   /** Что стоит уточнить у пользователя. */
@@ -145,5 +150,22 @@ export function buildInitialPlan(a: WizardAnswers, today: IsoDate): InitialPlan 
   if (a.children > 0 && a.program !== 'family') {
     notes.push('С детьми может подойти семейная ипотека — проверьте условия на сайте ДОМ.РФ.');
   }
-  return { stages, expenses, accounts, loan, keysDate, dealDate, notes };
+  const living: LivingExpenseInput[] = (a.budget ?? [])
+    .filter((b) => b.amountKop > 0)
+    .map((b, i) => {
+      const item = budgetCatalogItem(b.catalogKey);
+      return {
+        id: `liv_${b.catalogKey}`,
+        name: item?.name ?? b.catalogKey,
+        amountKop: b.amountKop,
+        essential: item?.essential ?? true,
+        group: item?.group ?? 'other',
+        catalogKey: b.catalogKey,
+        // аренда до переезда заканчивается с получением ключей
+        ...(b.catalogKey === 'rent' ? { kind: 'rent' as const, endsAtKeys: true } : {}),
+        sort: i,
+      };
+    });
+  if (living.length === 0) notes.push('Укажите расходы на жизнь в разделе «Бюджет» — без них подушка и распределение доходов посчитаны неточно.');
+  return { stages, expenses, accounts, loan, living, keysDate, dealDate, notes };
 }

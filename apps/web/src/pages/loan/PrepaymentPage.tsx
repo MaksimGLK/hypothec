@@ -3,6 +3,7 @@ import { AlertTriangle, Plus, Star, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { useAuth } from '../../api/auth.js';
 import { useHh, useHhMutation } from '../../api/household.js';
 import type { CompareDto, DashboardDto, LoanDto, PrepaymentScenarioDto } from '../../api/types.js';
 import { LessonsFor, Term } from '../../components/learning.js';
@@ -32,6 +33,7 @@ export default function PrepaymentPage() {
   const scenarios = useHh<PrepaymentScenarioDto[]>('/prepayment-scenarios');
   const dashboard = useHh<DashboardDto>('/dashboard');
   const [params, setParams] = useSearchParams();
+  const simple = useAuth().uiMode === 'simple';
   if (loans.isLoading || scenarios.isLoading) return <Spinner />;
   if (loans.error || scenarios.error) return <ErrorBox error={loans.error ?? scenarios.error} />;
   const loan = loans.data?.[0];
@@ -44,7 +46,10 @@ export default function PrepaymentPage() {
   return (
     <div>
       <Tabs items={LOAN_TABS} />
-      <PageHeader title="Досрочное погашение" subtitle="Посчитайте разные варианты и сравните. Основной сценарий участвует в плане, остальные — черновики." />
+      <PageHeader
+        title="Досрочное погашение"
+        subtitle={simple ? 'Сколько сэкономит досрочный платёж и насколько раньше закроется кредит.' : 'Посчитайте разные варианты и сравните. Основной сценарий участвует в плане, остальные — черновики.'}
+      />
       <div className="mb-4">
         <LessonsFor screen="prepayment" />
       </div>
@@ -60,17 +65,101 @@ export default function PrepaymentPage() {
         </Card>
       )}
 
-      <QuickCalculator loan={loan} existing={selected?.prepayments ?? []} scenario={selected} />
+      {simple ? (
+        <SimplePrepayment loan={loan} scenario={list.find((x) => x.isActive) ?? list[0]} />
+      ) : (
+        <QuickCalculator loan={loan} existing={selected?.prepayments ?? []} scenario={selected} />
+      )}
 
+      {!simple && (
       <section className="mt-6">
         <h2 className="mb-3 text-lg font-semibold">Сценарии</h2>
         <ScenarioTabs list={list} selectedId={selected?.id} onSelect={(id) => setParams({ scenario: id })} />
         {selected && <ScenarioEditor key={selected.id} scenario={selected} loan={loan} />}
       </section>
 
-      <Compare loan={loan} list={list} />
+      )}
+      {!simple && <Compare loan={loan} list={list} />}
       <Timing loan={loan} existing={list.find((s) => s.isActive)?.prepayments ?? []} />
+      {simple && (
+        <p className="mt-4 text-sm text-ink-2">
+          Несколько сценариев, сравнение и режим «уменьшить платёж» — в продвинутом режиме (переключатель в меню).
+        </p>
+      )}
     </div>
+  );
+}
+
+/** Простой режим: одна сумма, одна дата, сокращение срока — и список досрочек в плане. */
+function SimplePrepayment({ loan, scenario }: { loan: LoanDto; scenario?: PrepaymentScenarioDto }) {
+  const [kind, setKind] = useState<'one_off' | 'monthly'>('one_off');
+  const [amount, setAmount] = useState<number | null>(rub(300_000));
+  const [date, setDate] = useState(() => (today() > loan.issueDate ? addMonths(today(), 1) : addMonths(loan.issueDate, 1)));
+  const existing = (scenario?.prepayments ?? []) as PrepaymentInput[];
+  const add = useHhMutation<Record<string, unknown>>('POST', `/prepayment-scenarios/${scenario?.id}/prepayments`, { success: 'Добавлено в план' });
+  const removePp = useHhMutation<{ _id: string }>('DELETE', (b) => `/prepayment-scenarios/${scenario?.id}/prepayments/${b._id}`, { success: 'Убрано из плана' });
+  const r = useMemo(() => {
+    if (!amount) return null;
+    try {
+      const input = toLoanInput(loan);
+      const base = buildSchedule(input, existing);
+      const next = buildSchedule(input, [...existing, { id: 'q', loanId: loan.id, kind, amountKop: amount, mode: 'reduce_term', ...(kind === 'one_off' ? { date } : { startDate: date }) }]);
+      return { savings: base.summary.totalInterestKop - next.summary.totalInterestKop, months: monthsBetween(next.summary.payoffDate, base.summary.payoffDate), payoff: next.summary.payoffDate };
+    } catch {
+      return null;
+    }
+  }, [loan, existing, kind, amount, date]);
+  return (
+    <>
+      <Card title="Сколько сэкономит досрочка">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field label="Как платить" htmlFor="sq-kind">
+            <Select id="sq-kind" value={kind} onChange={(e) => setKind(e.target.value as 'one_off' | 'monthly')}>
+              <option value="one_off">Разовый платёж</option>
+              <option value="monthly">Каждый месяц</option>
+            </Select>
+          </Field>
+          <Field label={kind === 'one_off' ? 'Сумма' : 'Сумма в месяц'} htmlFor="sq-amount">
+            <MoneyInput id="sq-amount" value={amount} onChange={setAmount} />
+          </Field>
+          <Field label={kind === 'one_off' ? 'Дата' : 'Начиная с'} htmlFor="sq-date">
+            <Input id="sq-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          </Field>
+        </div>
+        {r && (
+          <div className="mt-4 rounded-xl bg-primary-soft p-4">
+            <p className="text-sm text-ink-2">Переплата станет меньше на</p>
+            <p className="text-2xl font-semibold text-ok">
+              <Money kop={r.savings} />
+            </p>
+            <p className="mt-1 text-sm">{r.months > 0 ? `Кредит закроется на ${months(r.months)} раньше — ` : 'Кредит закроется '}<DateText date={r.payoff} /></p>
+            {scenario && (
+              <Button size="sm" className="mt-3" loading={add.isPending} onClick={() => add.mutate({ loanId: loan.id, kind, amountKop: amount, mode: 'reduce_term', ...(kind === 'one_off' ? { date } : { startDate: date }) })}>
+                Добавить в план
+              </Button>
+            )}
+          </div>
+        )}
+        <p className="mt-3 text-xs text-muted">Считаем с сокращением срока — так экономия больше всего: платёж остаётся прежним, кредит закрывается раньше.</p>
+      </Card>
+      {existing.length > 0 && (
+        <Card className="mt-4" title="Досрочки в плане">
+          <ul className="divide-y divide-border">
+            {scenario!.prepayments.map((p) => (
+              <li key={p.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                <span>
+                  <Money kop={p.amountKop} className="font-medium" /> {p.kind === 'monthly' ? 'каждый месяц с ' : ''}
+                  <DateText date={p.kind === 'monthly' ? p.startDate : p.date} />
+                </span>
+                <Button size="sm" variant="ghost" aria-label="Убрать досрочку" onClick={() => removePp.mutate({ _id: p.id })}>
+                  <Trash2 className="size-4" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+    </>
   );
 }
 
@@ -255,6 +344,8 @@ function ScenarioEditor({ scenario, loan }: { scenario: PrepaymentScenarioDto; l
                 <p className="font-medium">
                   <Money kop={p.amountKop} /> {p.kind === 'monthly' ? 'каждый месяц' : 'разово'}
                   {p.source === 'tax_refund' && <Badge tone="ok"> вычет</Badge>}
+                  {p.status === 'done' && <Badge tone={p.confirmed ? 'ok' : 'warn'}>{p.confirmed ? ' внесена' : ' ждёт подтверждения'}</Badge>}
+                  {p.status === 'skipped' && <Badge> не вносили</Badge>}
                 </p>
                 <p className="text-xs text-ink-2">
                   {p.kind === 'one_off' ? <DateText date={p.date} /> : <>с <DateText date={p.startDate} />{p.endDate && <> по <DateText date={p.endDate} /></>}</>} · {MODE_LABEL[p.mode]}

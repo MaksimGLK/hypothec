@@ -9,6 +9,7 @@ import type { HousingType, MortgageProgram, StageStatus } from '../stages/templa
 import type { TaxMemberInput, TaxResult } from '../tax/tax.js';
 import type { Recommendation, RecommendationRule, RecommendationState } from '../recommendations/types.js';
 import type { CalendarEvent } from '../calendar/calendar.js';
+import type { SpendingInput } from '../budget/budget.js';
 
 export interface ScenarioInput {
   housingType: HousingType;
@@ -61,7 +62,10 @@ export interface PlanInput {
   prepaymentScenarios: PrepaymentScenario[];
   incomes: IncomeInput[];
   expenses: ExpenseInput[];
+  /** Категории бюджета на жизнь с планом на месяц. */
   living: LivingExpenseInput[];
+  /** Фактические траты (для советов о бюджете). Можно передавать только последние месяцы. */
+  spendings?: SpendingInput[];
   accounts: AccountInput[];
   taxMembers: TaxMemberInput[];
   settings: HouseholdSettings;

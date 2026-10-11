@@ -75,6 +75,8 @@ export const User = z.object({
   email: z.string(),
   name: z.string(),
   emailVerified: z.boolean(),
+  /** Режим интерфейса: simple — главное, advanced — все разделы и настройки. */
+  uiMode: z.enum(['simple', 'advanced']),
   createdAt: z.iso.datetime(),
 });
 export type User = z.infer<typeof User>;
@@ -96,6 +98,11 @@ export const Session = z.object({
   createdAt: z.iso.datetime(),
   lastUsedAt: z.iso.datetime(),
   current: z.boolean(),
+});
+
+export const UpdateMeRequest = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  uiMode: z.enum(['simple', 'advanced']).optional(),
 });
 
 export const DeleteAccountRequest = z.object({

@@ -52,6 +52,8 @@ export const WizardAnswers = z.object({
   annualRate: RatePercent.optional(),
   termYears: z.number().int().min(1).max(40).optional(),
   startDate: IsoDate.optional(),
+  /** Расходы на жизнь по категориям справочника — сразу попадают в бюджет. */
+  budget: z.array(z.object({ catalogKey: z.string().max(64), amountKop: Kop })).max(30).optional(),
 });
 export type WizardAnswers = z.infer<typeof WizardAnswers>;
 
@@ -121,10 +123,16 @@ export type Expense = z.infer<typeof Expense>;
 export const CreateExpenseRequest = ExpenseFields;
 export const UpdateExpenseRequest = withVersion(ExpenseFields);
 
+/** Категория бюджета на жизнь с планом на месяц. */
 const LivingFields = z.object({
   name: z.string().trim().min(1).max(200),
   amountKop: Kop,
   kind: z.enum(['rent', 'other']).optional(),
+  essential: z.boolean().optional(),
+  group: z.string().max(32).nullable().optional(),
+  catalogKey: z.string().max(64).nullable().optional(),
+  sort: z.number().int().optional(),
+  autoPayDay: z.number().int().min(1).max(31).nullable().optional(),
   startDate: IsoDate.nullable().optional(),
   endDate: IsoDate.nullable().optional(),
   endsAtKeys: z.boolean().optional(),
@@ -133,6 +141,36 @@ const LivingFields = z.object({
 export const LivingExpense = LivingFields.extend({ id: Id, version: Version });
 export const CreateLivingExpenseRequest = LivingFields;
 export const UpdateLivingExpenseRequest = withVersion(LivingFields);
+
+// ── Траты (факт бюджета) ───────────────────────────────────────────────
+const SpendingFields = z.object({
+  categoryId: Id.nullable(),
+  date: IsoDate,
+  amountKop: Kop.refine((v) => v > 0, 'Сумма должна быть больше нуля'),
+  note: z.string().trim().max(200).nullable().optional(),
+  source: z.enum(['manual', 'plan', 'auto']).optional(),
+});
+export const Spending = SpendingFields.extend({ id: Id, version: Version, createdBy: Id.nullable().optional() });
+export type Spending = z.infer<typeof Spending>;
+export const CreateSpendingRequest = SpendingFields;
+export const UpdateSpendingRequest = withVersion(SpendingFields);
+export const MonthQuery = z.object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Месяц в формате ГГГГ-ММ') });
+/** Правка ячейки «Потрачено»: привести факт категории за месяц к итогу. */
+export const SetMonthTotalRequest = z.object({
+  month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Месяц в формате ГГГГ-ММ'),
+  totalKop: Kop,
+});
+/** Факт взноса в цель за месяц (итог). */
+export const SetContributionRequest = z.object({
+  accountId: Id,
+  month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Месяц в формате ГГГГ-ММ'),
+  amountKop: Kop,
+});
+export const ParseSpendingRequest = z.object({ text: z.string().trim().min(1).max(200) });
+export const BootstrapBudgetRequest = z.object({
+  /** Ключи категорий из справочника; по умолчанию — стартовый набор. */
+  keys: z.array(z.string().max(64)).max(30).optional(),
+});
 
 // ── Доходы ─────────────────────────────────────────────────────────────
 export const IncomeType = z.enum(['salary', 'advance', 'bonus', 'self_employed', 'rent', 'one_off', 'tax_refund', 'gift', 'property_sale', 'other']);
@@ -184,6 +222,7 @@ export const GoalStep = z.object({
   accountId: Id.optional(),
   sources: SourceFilter,
   enabled: z.boolean(),
+  sharePercent: z.number().int().min(0).max(100).optional(),
 });
 export const AllocationSettings = z.object({
   useUnstableForObligations: z.boolean(),
@@ -191,6 +230,7 @@ export const AllocationSettings = z.object({
   cushionMonths: z.number().int().min(1).max(24),
   minCushionMonths: z.number().int().min(1).max(12),
   steps: z.array(GoalStep).max(20),
+  distribution: z.enum(['sequential', 'split']).optional(),
 });
 export const MarkTransferDoneRequest = z.object({ date: IsoDate, incomeId: Id, accountId: Id, amountKop: Kop });
 
@@ -242,7 +282,18 @@ const PrepaymentFields = z
     mode: PrepaymentMode,
     source: z.enum(['manual', 'tax_refund', 'recommendation']).default('manual'),
   });
-export const Prepayment = PrepaymentFields.extend({ id: Id, version: Version });
+export const Prepayment = PrepaymentFields.extend({
+  id: Id,
+  version: Version,
+  status: z.enum(['planned', 'done', 'skipped']).optional(),
+  factAmountKop: Kop.nullable().optional(),
+  confirmed: z.boolean().optional(),
+});
+/** Подтверждение разовой досрочки после её даты. */
+export const ConfirmPrepaymentRequest = z.object({
+  action: z.enum(['confirm', 'amount', 'skip', 'restore']),
+  amountKop: Kop.optional(),
+});
 export const CreatePrepaymentRequest = PrepaymentFields.superRefine((v, ctx) => {
   if (v.kind === 'one_off' && !v.date) ctx.addIssue({ code: 'custom', path: ['date'], message: 'Укажите дату платежа' });
 });

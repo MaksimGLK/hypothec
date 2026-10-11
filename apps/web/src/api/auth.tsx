@@ -12,6 +12,9 @@ interface AuthState {
   register(input: { email: string; password: string; name: string; marketing?: boolean }): Promise<void>;
   logout(): Promise<void>;
   reloadUser(): Promise<void>;
+  /** Простой режим — главное без лишних настроек, продвинутый — все разделы. Хранится на сервере, общий для всех устройств. */
+  uiMode: 'simple' | 'advanced';
+  setUiMode(mode: 'simple' | 'advanced'): Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -64,6 +67,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       async reloadUser() {
         setUser(await api<User>('/me'));
+      },
+      uiMode: user?.uiMode ?? 'simple',
+      async setUiMode(mode) {
+        setUser(await api<User>('/me', { method: 'PATCH', body: { uiMode: mode } }));
       },
     }),
     [status, user, accept, qc],

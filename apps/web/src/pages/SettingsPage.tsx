@@ -5,6 +5,7 @@ import { api } from '../api/client.js';
 import { useHh, useHhMutation } from '../api/household.js';
 import type { SettingsDto } from '../api/types.js';
 import { Term } from '../components/learning.js';
+import { ModeSwitch } from '../layout/AppLayout.js';
 import { Button, Card, Field, Input, MoneyInput, PageHeader, Segmented, Spinner, Switch } from '../components/ui/index.js';
 import { useToast } from '../components/ui/toast.js';
 
@@ -45,6 +46,11 @@ export default function SettingsPage() {
             { value: 'system', label: <span className="inline-flex items-center gap-1.5"><Monitor className="size-4" aria-hidden />Как в системе</span> },
           ]}
         />
+      </Card>
+      <Card className="mt-4" title="Режим">
+        <div className="-mx-3">
+          <ModeSwitch />
+        </div>
       </Card>
       <Reminders />
       <PlanSettings />

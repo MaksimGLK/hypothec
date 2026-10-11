@@ -1,4 +1,4 @@
-import { DeleteAccountRequest, User } from '@hypothec/api-contract';
+import { DeleteAccountRequest, UpdateMeRequest, User } from '@hypothec/api-contract';
 import { and, asc, eq, inArray, ne } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -25,8 +25,12 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
     return toUserDto(u);
   });
 
-  app.patch('/me', { schema: { tags, summary: 'Изменить имя', body: z.object({ name: z.string().trim().min(1).max(100) }), response: { 200: User } } }, async (req) => {
-    const [u] = await db.update(s.users).set({ name: req.body.name, updatedAt: deps.now() }).where(eq(s.users.id, req.user.id)).returning();
+  app.patch('/me', { schema: { tags, summary: 'Изменить имя или режим интерфейса', body: UpdateMeRequest, response: { 200: User } } }, async (req) => {
+    const [u] = await db
+      .update(s.users)
+      .set({ ...(req.body.name ? { name: req.body.name } : {}), ...(req.body.uiMode ? { uiMode: req.body.uiMode } : {}), updatedAt: deps.now() })
+      .where(eq(s.users.id, req.user.id))
+      .returning();
     return toUserDto(u!);
   });
 
@@ -82,6 +86,8 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
       loans: await byH(s.loans as never),
       expenses: await byH(s.expenses as never),
       livingExpenses: await byH(s.livingExpenses as never),
+      spendings: await byH(s.spendings as never),
+      goalContributions: await byH(s.goalContributions as never),
       incomes: await byH(s.incomes as never),
       accounts: await byH(s.accounts as never),
       prepaymentScenarios: await byH(s.prepaymentScenarios as never),

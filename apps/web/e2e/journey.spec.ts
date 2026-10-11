@@ -24,6 +24,11 @@ test('семья проходит путь: регистрация → маст�
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
 
+  // инструкция открывается без входа
+  await page.goto('/help');
+  await expect(page.getByRole('heading', { name: 'Как пользоваться планировщиком' })).toBeVisible();
+  await page.screenshot({ path: shots('00-help'), fullPage: true });
+
   // регистрация
   await page.goto('/register');
   await page.getByLabel('Как к вам обращаться').fill('Анна');
@@ -57,11 +62,54 @@ test('семья проходит путь: регистрация → маст�
   await page.getByLabel('Ставка, % годовых').fill('16');
   await page.getByLabel('Срок, лет').selectOption('20');
   await page.getByRole('button', { name: 'Дальше' }).click();
+  // расходы на жизнь
+  await moneyInput(page, 'Коммуналка', '8000');
+  await moneyInput(page, 'Продукты', '40000');
+  await moneyInput(page, 'Кафе, доставка, развлечения', '12000');
+  await expect(page.getByText(/Итого:/)).toContainText('60 000');
+  await page.screenshot({ path: shots('02b-wizard-budget'), fullPage: true });
+  await page.getByRole('button', { name: 'Дальше' }).click();
   await page.getByRole('button', { name: 'Собрать план' }).click();
   await expect(page.getByRole('heading', { name: 'План готов' })).toBeVisible();
 
-  // доходы одной строкой
-  await page.getByRole('button', { name: 'Добавить доходы' }).click();
+  // «Мой месяц»: доход прямо в строке таблицы
+  await page.getByRole('button', { name: 'Открыть «Мой месяц»' }).click();
+  await expect(page.getByRole('heading', { name: 'Мой месяц' })).toBeVisible();
+  await page.getByLabel('Новый доход: название').fill('Аванс Анны');
+  await page.getByLabel('Новый доход: день').fill('25');
+  await page.getByLabel('Новый доход: сумма').fill('60000');
+  await page.getByRole('button', { name: 'Добавить доход' }).click();
+  await expect(page.getByText('Доход добавлен')).toBeVisible();
+  // план расходов правится в строке
+  await page.getByRole('button', { name: 'План: Продукты: изменить' }).click();
+  await page.getByLabel('План: Продукты').fill('42000');
+  await page.getByLabel('План: Продукты').press('Enter');
+  await expect(page.getByRole('button', { name: 'План: Продукты: изменить' })).toContainText('42 000');
+  // «Потрачено» правится в ячейке: итог и «+сумма»
+  await page.getByRole('button', { name: 'Потрачено: Продукты: изменить' }).click();
+  await page.getByLabel('Потрачено: Продукты').fill('5000');
+  await page.getByLabel('Потрачено: Продукты').press('Enter');
+  await expect(page.getByRole('button', { name: 'Потрачено: Продукты: изменить' })).toContainText('5 000');
+  await page.getByRole('button', { name: 'Потрачено: Продукты: изменить' }).click();
+  await page.getByLabel('Потрачено: Продукты').fill('+2500');
+  await page.getByLabel('Потрачено: Продукты').press('Enter');
+  await expect(page.getByRole('button', { name: 'Потрачено: Продукты: изменить' })).toContainText('7 500');
+  // вне плана
+  await page.getByLabel('Вне плана: на что').fill('ДР Максима');
+  await page.getByLabel('Вне плана: сумма').fill('25000');
+  await page.getByRole('button', { name: 'Добавить трату вне плана' }).click();
+  await expect(page.getByText('ДР Максима')).toBeVisible();
+  // копилка: факт рядом с планом
+  await page.getByRole('button', { name: 'Подушка', exact: true }).first().click().catch(() => {});
+  await page.getByRole('button', { name: 'Факт: Подушка: изменить' }).click();
+  await page.getByLabel('Факт: Подушка').fill('15000');
+  await page.getByLabel('Факт: Подушка').press('Enter');
+  await expect(page.getByText('Факт сохранён — остаток счёта обновлён')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Факт: Подушка: изменить' })).toContainText('15 000');
+  await page.screenshot({ path: shots('03a-month'), fullPage: true });
+
+  // доходы одной строкой — подробный раздел
+  await page.goto('/money/incomes');
   await page.getByLabel('Доход одной строкой').fill('Зарплата Анны 250 000 каждый месяц 10-го');
   await page.getByRole('button', { name: 'Разобрать' }).click();
   const dialog = page.getByRole('dialog');
@@ -76,18 +124,25 @@ test('семья проходит путь: регистрация → маст�
   await expect(page.getByText('Премия').first()).toBeVisible();
   await page.screenshot({ path: shots('04-incomes'), fullPage: true });
 
-  // ежемесячные траты
-  await page.goto('/money/expenses');
-  await page.getByRole('radio', { name: 'Каждый месяц' }).click();
-  await page.getByRole('button', { name: 'Указать' }).click();
-  await moneyInput(page, 'Сумма в месяц', '110000');
-  await page.getByRole('dialog').getByRole('button', { name: 'Сохранить' }).click();
-  await expect(page.getByText(/Итого:/)).toContainText('110 000');
+  // бюджет: план из мастера, трата одной строкой
+  await page.goto('/budget');
+  await expect(page.getByRole('heading', { name: 'Бюджет', exact: true })).toBeVisible();
+  await page.getByLabel('Трата одной строкой').fill('пятёрочка 3 450');
+  await page.getByRole('button', { name: 'Добавить', exact: true }).click();
+  await expect(page.getByText(/«Продукты»/)).toBeVisible();
+  await expect(page.getByText('пятёрочка')).toBeVisible();
+  // постоянный счёт — одной кнопкой
+  await page.getByRole('button', { name: /Отметить «Коммуналка» оплаченной/ }).click();
+  await expect(page.getByText('«Коммуналка» — отмечено оплаченным')).toBeVisible();
+  await expect(page.getByText('по плану')).toBeVisible();
+  await expect(page.getByText(/Куда уходит доход/).first()).toBeVisible();
+  await page.screenshot({ path: shots('04b-budget'), fullPage: true });
 
   // главный экран
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Следующий платёж' })).toBeVisible();
-  await expect(page.getByText('Главное сейчас')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Бюджет этого месяца' })).toBeVisible();
+  await expect(page.getByText(/Первые шаги: \d из 7/)).toBeVisible();
   await page.screenshot({ path: shots('05-dashboard'), fullPage: true });
 
   // счета и переводы
@@ -100,7 +155,23 @@ test('семья проходит путь: регистрация → маст�
   await expect(page.getByText(/Одобрение ипотеки/)).toBeVisible();
   await page.screenshot({ path: shots('07-stages'), fullPage: true });
 
-  // досрочка: мгновенный расчёт в браузере
+  // досрочка в простом режиме: одна сумма, сокращение срока
+  await page.goto('/loan/prepayment');
+  await expect(page.getByText('Сколько сэкономит досрочка')).toBeVisible();
+  await expect(page.getByText('Переплата станет меньше на')).toBeVisible();
+  await page.screenshot({ path: shots('08a-prepayment-simple'), fullPage: true });
+
+  // продвинутый режим: все разделы и полный калькулятор
+  await page.goto('/settings');
+  await page.locator('main').getByRole('radio', { name: 'Продвинутый' }).click();
+  await expect(page.locator('main').getByText(/Все разделы/)).toBeVisible();
+  // распределение долями: подушка и досрочка одновременно
+  await page.goto('/money/allocation');
+  await page.getByRole('radio', { name: 'Долями' }).click();
+  await expect(page.getByText(/Каждое поступление делится между целями/)).toBeVisible();
+  await expect(page.getByLabel('Доля: Досрочка')).toBeVisible();
+  await page.screenshot({ path: shots('06b-allocation-split'), fullPage: true });
+
   await page.goto('/loan/prepayment');
   await expect(page.getByText('Быстрый расчёт')).toBeVisible();
   await expect(page.getByText('меньше переплата').first()).toBeVisible();

@@ -1,10 +1,13 @@
-import { formatDateRu, monthsBetween } from '@hypothec/core';
+import { type BudgetMonth, formatDateRu, monthsBetween } from '@hypothec/core';
 import { ArrowRight, CheckCircle2, CircleAlert } from 'lucide-react';
 import { Link } from 'react-router';
 import { useAuth } from '../api/auth.js';
 import { useHh } from '../api/household.js';
-import type { DashboardDto, IncomeDto } from '../api/types.js';
+import type { AccountDto, DashboardDto, IncomeDto, LoanDto, StageDto } from '../api/types.js';
+import { useState } from 'react';
 import { LessonsFor, Term } from '../components/learning.js';
+import { DistributionCard } from '../components/distribution.js';
+import { PendingPrepayments } from '../components/pending-prepayments.js';
 import { RecommendationCard } from '../components/recommendation.js';
 import { Badge, Button, Card, DateText, ErrorBox, Money, Progress, Spinner } from '../components/ui/index.js';
 
@@ -23,10 +26,85 @@ function years(months: number) {
   return [y ? `${y} г.` : '', m ? `${m} мес.` : ''].filter(Boolean).join(' ') || '0 мес.';
 }
 
+const FIRST_STEPS_KEY = 'hp-first-steps-hidden';
+
+/** Чек-лист настройки: что уже заполнено и что осталось — со ссылками туда, где это делается. */
+function FirstSteps({ hasIncomes, hasBudget }: { hasIncomes: boolean; hasBudget: boolean }) {
+  const { user } = useAuth();
+  const stages = useHh<StageDto[]>('/stages');
+  const accounts = useHh<AccountDto[]>('/accounts');
+  const loans = useHh<LoanDto[]>('/loans');
+  const members = useHh<{ id: string }[]>('/members');
+  const [hidden, setHidden] = useState(() => {
+    try {
+      return localStorage.getItem(FIRST_STEPS_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const steps = [
+    { done: true, title: 'Пройти мастер', to: '/wizard', hint: 'Сценарий покупки, этапы и черновик кредита' },
+    { done: hasIncomes, title: 'Добавить доходы', to: '/month', hint: 'В «Моём месяце»: зарплаты и авансы с днём поступления' },
+    { done: hasBudget, title: 'Заполнить расходы', to: '/month', hint: 'В «Моём месяце»: сколько уходит на жизнь' },
+    { done: (loans.data ?? []).some((l) => l.version > 1), title: 'Проверить кредит', to: '/loan', hint: 'Сумма, ставка, срок, дата — как в договоре' },
+    { done: (accounts.data ?? []).some((a) => a.balanceKop > 0), title: 'Указать, сколько уже отложено', to: '/money/allocation', hint: 'Подушка, первый взнос и другие сбережения' },
+    { done: (stages.data ?? []).some((s) => s.status === 'done' || s.status === 'in_progress'), title: 'Отметить этапы сделки', to: '/stages', hint: 'Что уже пройдено и плановые даты' },
+    { done: Boolean(user?.emailVerified), title: 'Подтвердить почту', to: '/', hint: 'Чтобы приходили напоминания о платежах' },
+    { done: (members.data?.length ?? 0) > 1, title: 'Пригласить супруга(у)', to: '/family', hint: 'По желанию — вести план вдвоём', optional: true },
+  ];
+  const required = steps.filter((s) => !s.optional);
+  const doneCount = required.filter((s) => s.done).length;
+  if (hidden || doneCount === required.length) return null;
+  return (
+    <Card
+      tone="info"
+      title={`Первые шаги: ${doneCount} из ${required.length}`}
+      action={
+        <Link to="/help" className="text-sm text-primary">
+          Инструкция
+        </Link>
+      }
+    >
+      <ol className="space-y-2">
+        {steps.map((s) => (
+          <li key={s.title} className="flex items-start gap-2.5 text-sm">
+            {s.done ? <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-ok" aria-label="сделано" /> : <span className="mt-0.5 size-4 shrink-0 rounded-full border-2 border-muted" aria-label="не сделано" />}
+            <span>
+              {s.done ? (
+                <span className="text-ink-2 line-through">{s.title}</span>
+              ) : (
+                <Link to={s.to} className="font-medium text-primary">
+                  {s.title}
+                </Link>
+              )}
+              {!s.done && <span className="block text-xs text-ink-2">{s.hint}</span>}
+            </span>
+          </li>
+        ))}
+      </ol>
+      <button
+        type="button"
+        className="mt-3 text-xs text-muted"
+        onClick={() => {
+          setHidden(true);
+          try {
+            localStorage.setItem(FIRST_STEPS_KEY, '1');
+          } catch {
+            /* без сохранения */
+          }
+        }}
+      >
+        Скрыть
+      </button>
+    </Card>
+  );
+}
+
 export function DashboardPage() {
   const { user } = useAuth();
   const { data: d, isLoading, error, refetch } = useHh<DashboardDto>('/dashboard');
   const incomes = useHh<IncomeDto[]>('/incomes');
+  const budget = useHh<BudgetMonth>(`/budget/summary?month=${new Date().toISOString().slice(0, 7)}`);
   if (isLoading) return <Spinner />;
   if (error || !d) return <ErrorBox error={error} onRetry={() => void refetch()} />;
   const np = d.nextPayment;
@@ -37,18 +115,13 @@ export function DashboardPage() {
       <header className="mb-2">
         <p className="text-sm text-muted">{formatDateRu(d.today)}</p>
         <h1 className="text-2xl font-semibold tracking-tight">Здравствуйте{user?.name ? `, ${user.name}` : ''}</h1>
+        <p className="mt-1 text-sm text-ink-2">
+          Это обзор плана. Доходы, расходы и копилку месяца удобно вести на одной странице — <Link to="/month" className="font-medium text-primary">«Мой месяц»</Link>.
+        </p>
       </header>
 
-      {noIncomes && (
-        <Card tone="info" title="Добавьте доходы">
-          <p className="text-sm">Без доходов не получится посчитать, сколько и на какой счёт откладывать к платежу. Это пара минут.</p>
-          <Link to="/money/incomes">
-            <Button className="mt-3" size="sm">
-              Добавить доходы
-            </Button>
-          </Link>
-        </Card>
-      )}
+      <PendingPrepayments />
+      <FirstSteps hasIncomes={!noIncomes} hasBudget={(budget.data?.planKop ?? 0) > 0} />
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card title="Следующий платёж">
@@ -113,6 +186,38 @@ export function DashboardPage() {
           </Link>
         </Card>
       </div>
+
+      {budget.data && (
+        <Card title="Бюджет этого месяца" action={<Link to="/month" className="text-sm text-primary">Мой месяц</Link>}>
+          {budget.data.planKop === 0 ? (
+            <p className="text-sm text-ink-2">
+              Расходы на жизнь не указаны. <Link to="/budget" className="text-primary">Заполнить бюджет</Link> — пара минут, и подушка с распределением доходов станут точнее.
+            </p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <p className="text-sm text-ink-2">
+                  Потрачено <Money kop={budget.data.factKop} className="font-semibold text-ink" /> из <Money kop={budget.data.planKop} />
+                </p>
+                <p className={budget.data.leftKop < 0 ? 'text-sm font-medium text-danger' : 'text-sm font-medium text-ok'}>
+                  {budget.data.leftKop < 0 ? 'сверх плана ' : 'осталось '}
+                  <Money kop={Math.abs(budget.data.leftKop)} />
+                </p>
+              </div>
+              <div className="mt-2">
+                <Progress value={budget.data.factKop / budget.data.planKop} tone={budget.data.leftKop < 0 ? 'warn' : 'primary'} label="Бюджет месяца" />
+              </div>
+              {budget.data.dailyAllowanceKop !== null && budget.data.leftKop > 0 && (
+                <p className="mt-2 text-xs text-muted">
+                  Можно тратить около <Money kop={budget.data.dailyAllowanceKop} /> в день до конца месяца.
+                </p>
+              )}
+            </>
+          )}
+        </Card>
+      )}
+
+      <DistributionCard month={d.today.slice(0, 7)} compact />
 
       {d.payoff && (
         <Card title="Когда закроется кредит">
@@ -234,9 +339,12 @@ export function DashboardPage() {
                   {t.lines
                     .filter((l) => l.purpose !== 'free')
                     .map((l) => (
-                      <li key={l.accountId + l.label} className="flex justify-between gap-3">
-                        <span>→ {l.label}</span>
-                        <Money kop={l.amountKop} />
+                      <li key={l.accountId + l.label}>
+                        <div className="flex justify-between gap-3">
+                          <span>→ {l.label}</span>
+                          <Money kop={l.amountKop} />
+                        </div>
+                        {l.parts && l.parts.length > 0 && <p className="pl-4 text-xs text-muted">{l.parts.map((p) => p.name).join(', ')}</p>}
                       </li>
                     ))}
                 </ul>

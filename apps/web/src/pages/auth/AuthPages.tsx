@@ -15,6 +15,11 @@ function AuthShell({ title, children, footer }: { title: string; children: React
         </div>
         <div className="rounded-2xl border border-border bg-surface p-5">{children}</div>
         {footer && <div className="mt-5 text-center text-sm text-ink-2">{footer}</div>}
+        <p className="mt-3 text-center text-sm">
+          <Link to="/help" className="text-ink-2 underline-offset-2 hover:underline">
+            Как пользоваться сервисом
+          </Link>
+        </p>
       </div>
     </div>
   );

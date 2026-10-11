@@ -9,7 +9,8 @@ import {
   monthsBetween,
 } from '../date/date.js';
 import type { ExpenseContext, ExpenseInput, LivingExpenseInput } from '../expenses/expenses.js';
-import { expandExpenses, livingMonthlyAt } from '../expenses/expenses.js';
+import { expandExpenses, livingActiveOn, livingMonthlyAt } from '../expenses/expenses.js';
+import { splitKop } from '../money/money.js';
 import type { IncomeEvent, Reliability } from '../income/income.js';
 import type { Kop } from '../money/money.js';
 import type { LoanSchedule, PrepaymentInput } from '../loan/types.js';
@@ -36,7 +37,16 @@ export interface GoalStep {
   accountId?: string;
   sources: SourceFilter;
   enabled: boolean;
+  /** Доля свободных денег в режиме «долями», %. */
+  sharePercent?: number;
 }
+
+/**
+ * Как делить деньги, оставшиеся после обязательных платежей:
+ * - `sequential` — по очереди: следующая цель получает деньги, когда предыдущая собрана;
+ * - `split` — долями: каждое поступление делится между целями по процентам, доля собранной цели переходит к остальным.
+ */
+export type DistributionMode = 'sequential' | 'split';
 
 export interface AllocationSettings {
   /** Платить ипотеку и обязательные расходы также из нестабильных денег (по умолчанию нет). */
@@ -46,6 +56,7 @@ export interface AllocationSettings {
   cushionMonths: number;
   minCushionMonths: number;
   steps: GoalStep[];
+  distribution?: DistributionMode;
 }
 
 export const DEFAULT_GOAL_STEPS: GoalStep[] = [
@@ -64,7 +75,13 @@ export const DEFAULT_ALLOCATION_SETTINGS: AllocationSettings = {
   steps: DEFAULT_GOAL_STEPS,
 };
 
-export type ObligationKind = 'mortgage' | 'annual' | 'deal' | 'living' | 'monthly_expense';
+/** living — обязательные траты на жизнь, living_flexible — необязательные (кафе, развлечения): их не закладывают в подушку. */
+export type ObligationKind = 'mortgage' | 'annual' | 'deal' | 'living' | 'living_flexible' | 'monthly_expense';
+
+export interface ObligationPart {
+  name: string;
+  amountKop: Kop;
+}
 
 export interface Obligation {
   id: string;
@@ -75,6 +92,8 @@ export interface Obligation {
   windowStart: IsoDate;
   amountKop: Kop;
   refId?: string;
+  /** Из чего состоит сумма — для «Жизни»: категории бюджета. */
+  parts?: ObligationPart[];
 }
 
 export interface AllocationLine {
@@ -85,6 +104,8 @@ export interface AllocationLine {
   /** Человеческое пояснение: «платёж 15 марта», «подушка». */
   label: string;
   obligationId?: string;
+  /** Детализация суммы: на что именно эти деньги (категории бюджета для «Жизни»). */
+  parts?: ObligationPart[];
 }
 
 export interface Transfer {
@@ -128,6 +149,8 @@ export interface GoalProgress {
   currentKop: Kop;
   /** Прогноз даты достижения при текущем плане (null — не достигается в горизонте). */
   reachDate: IsoDate | null;
+  /** Когда по плану на эту цель пойдут первые деньги (null — не в горизонте). */
+  startDate: IsoDate | null;
 }
 
 export interface AllocationResult {
@@ -167,7 +190,7 @@ function sourceOk(filter: SourceFilter, reliability: Reliability): boolean {
   return reliability !== 'stable';
 }
 
-const KIND_ORDER: Record<ObligationKind, number> = { mortgage: 0, annual: 1, deal: 2, monthly_expense: 3, living: 4 };
+const KIND_ORDER: Record<ObligationKind, number> = { mortgage: 0, annual: 1, deal: 2, monthly_expense: 3, living: 4, living_flexible: 5 };
 
 /** Обязательные платежи на горизонте: ипотека, ежегодные расходы, расходы сделки, жизнь. */
 export function buildObligations(input: AllocationInput): Obligation[] {
@@ -177,7 +200,8 @@ export function buildObligations(input: AllocationInput): Obligation[] {
 
   // ипотека (несколько кредитов — отдельные обязательства, одно окно накопления)
   for (const s of input.schedules) {
-    let prev = today;
+    // окно накопления первого платежа начинается сегодня включительно: сегодняшняя зарплата тоже идёт в дело
+    let prev = addDays(today, -1);
     for (const r of s.rows) {
       if (r.kind !== 'payment') continue;
       if (r.date < today) {
@@ -242,20 +266,31 @@ export function buildObligations(input: AllocationInput): Obligation[] {
     }
   }
 
-  // базовые траты — каждый месяц
+  // траты на жизнь — каждый месяц: обязательные и необязательные отдельно
   for (let k = 0; k <= input.horizonMonths; k++) {
     const monthStart = startOfMonth(addMonths(today, k));
-    const amount = livingMonthlyAt(input.living, monthStart, input.expenseContext);
-    if (amount <= 0) continue;
-    obligations.push({
-      id: `living:${monthKey(monthStart)}`,
-      kind: 'living',
-      accountKind: 'life',
-      label: 'Жизнь',
-      dueDate: endOfMonth(monthStart),
-      windowStart: maxDate(today, monthStart),
-      amountKop: k === 0 ? proRate(amount, today) : amount,
-    });
+    for (const [kind, filter, suffix, label] of [
+      ['living', 'essential', '', 'Жизнь'],
+      ['living_flexible', 'flexible', ':flex', 'Жизнь: необязательное'],
+    ] as const) {
+      const amount = livingMonthlyAt(input.living, monthStart, input.expenseContext, filter);
+      if (amount <= 0) continue;
+      const total = k === 0 ? proRate(amount, today) : amount;
+      const cats = input.living.filter(
+        (l) => l.amountKop > 0 && livingActiveOn(l, monthStart, input.expenseContext) && (filter === 'essential' ? l.essential !== false : l.essential === false),
+      );
+      const shares = splitKop(total, cats.map((c) => c.amountKop));
+      obligations.push({
+        id: `living:${monthKey(monthStart)}${suffix}`,
+        kind,
+        accountKind: 'life',
+        label,
+        dueDate: endOfMonth(monthStart),
+        windowStart: maxDate(today, monthStart),
+        amountKop: total,
+        parts: cats.map((c, i) => ({ name: c.name, amountKop: shares[i]! })),
+      });
+    }
   }
 
   return obligations.sort((a, b) => (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : KIND_ORDER[a.kind] - KIND_ORDER[b.kind]));
@@ -279,7 +314,9 @@ function monthlyPrepaymentOn(prepayments: readonly PrepaymentInput[], loanId: st
 /** Среднемесячные обязательные расходы на ближайшие 12 месяцев. */
 export function monthlyObligatory(obligations: readonly Obligation[], today: IsoDate): Kop {
   const end = addMonths(today, 12);
-  const total = obligations.filter((o) => o.kind !== 'deal' && o.dueDate >= today && o.dueDate < end).reduce((s, o) => s + o.amountKop, 0);
+  const total = obligations
+    .filter((o) => o.kind !== 'deal' && o.kind !== 'living_flexible' && o.dueDate >= today && o.dueDate < end)
+    .reduce((s, o) => s + o.amountKop, 0);
   return Math.round(total / 12);
 }
 
@@ -369,7 +406,10 @@ export function buildAllocation(input: AllocationInput): AllocationResult {
     }
   };
   const goalSteps = settings.steps.filter((s) => s.enabled);
+  // режим «долями» работает, если хотя бы одной цели задана доля; иначе — по очереди
+  const splitMode = settings.distribution === 'split' && goalSteps.some((st) => (st.sharePercent ?? 0) > 0);
   const goalReach = new Map<GoalStep, IsoDate | null>();
+  const goalStart = new Map<GoalStep, IsoDate>();
   for (const s of goalSteps) {
     const { account, target } = goalTargetKop(s);
     goalReach.set(s, target !== null && (balance[account.id] ?? 0) >= target ? today : null);
@@ -418,6 +458,14 @@ export function buildAllocation(input: AllocationInput): AllocationResult {
         if (existing) existing.amountKop += amount;
         else lines.push({ accountId: acc.id, accountKind: acc.kind, amountKop: amount, purpose, label, ...(obligationId ? { obligationId } : {}) });
       };
+      /** Строка с детализацией: сумма делится по частям обязательства пропорционально. */
+      const addParts = (acc: AccountInput, amount: Kop, o: Obligation) => {
+        add(acc, amount, 'obligation', o.label, o.id);
+        if (!o.parts?.length || amount <= 0) return;
+        const line = lines[lines.length - 1]!;
+        const shares = splitKop(amount, o.parts.map((p) => p.amountKop));
+        line.parts = o.parts.map((p, i) => ({ name: p.name, amountKop: shares[i]! })).filter((p) => p.amountKop > 0);
+      };
 
       const eligible = sourceOk(obligationSources, e.reliability);
       for (let k = oblCursor; k < obligations.length; k++) {
@@ -435,17 +483,39 @@ export function buildAllocation(input: AllocationInput): AllocationResult {
         const amount = Math.min(share, left, cap);
         need.set(o.id, left - amount);
         cap -= amount;
-        add(ensure(byKind(o.accountKind)), amount, 'obligation', o.label, o.id);
+        addParts(ensure(byKind(o.accountKind)), amount, o);
       }
 
-      for (const s of goalSteps) {
-        if (cap <= 0) break;
-        if (!sourceOk(s.sources, e.reliability)) continue;
-        const { account, target } = goalTargetKop(s);
-        const room = target === null ? cap : Math.max(0, target - (balance[account.id] ?? 0));
-        const amount = Math.min(room, cap);
+      const give = (st: GoalStep, account: AccountInput, amount: Kop) => {
+        if (amount <= 0) return;
         cap -= amount;
-        add(account, amount, 'goal', goalLabel(s, account));
+        if (!goalStart.has(st)) goalStart.set(st, e.date);
+        add(account, amount, 'goal', goalLabel(st, account));
+      };
+      const roomOf = (st: GoalStep) => {
+        const { account, target } = goalTargetKop(st);
+        return { account, room: target === null ? Infinity : Math.max(0, target - (balance[account.id] ?? 0)) };
+      };
+      if (splitMode) {
+        // долями: делим остаток между незаполненными целями; что не влезло в собранную цель — делим заново
+        for (let guard = 0; cap > 0 && guard < goalSteps.length + 1; guard++) {
+          const active = goalSteps.filter((st) => (st.sharePercent ?? 0) > 0 && sourceOk(st.sources, e.reliability) && roomOf(st).room > 0);
+          if (!active.length) break;
+          const pool = cap;
+          const shares = splitKop(pool, active.map((st) => st.sharePercent ?? 0));
+          active.forEach((st, i) => {
+            const { account, room } = roomOf(st);
+            give(st, account, Math.min(shares[i]!, room));
+          });
+          if (cap === pool) break;
+        }
+      } else {
+        for (const st of goalSteps) {
+          if (cap <= 0) break;
+          if (!sourceOk(st.sources, e.reliability)) continue;
+          const { account, room } = roomOf(st);
+          give(st, account, Math.min(room, cap));
+        }
       }
       if (cap > 0) add(life, cap, 'free', 'Свободные деньги');
       transfers.push({ date: e.date, incomeId: e.incomeId, incomeName: e.name, incomeAmountKop: e.amountKop, reliability: e.reliability, lines });
@@ -513,6 +583,7 @@ export function buildAllocation(input: AllocationInput): AllocationResult {
       targetKop: target,
       currentKop: account.balanceKop,
       reachDate: goalReach.get(s) ?? null,
+      startDate: goalStart.get(s) ?? null,
     };
   });
 
