@@ -37,14 +37,13 @@ export default function Prepayment() {
           [
             ['Сократить срок', result.reduceTerm],
             ['Уменьшить платёж', result.reducePayment],
-            ['Уменьшить платёж, платить прежнюю сумму', result.reducePaymentKeepAmount],
           ] as const
         ).map(([title, r]) => (
           <Card key={title} title={title}>
-            <Label>{r.savingsKop < 0 ? 'больше переплата' : 'меньше переплата'}</Label>
+            <Label>{r.savingsKop < 0 ? 'больше' : 'меньше'} переплата, чем {existing.length ? 'по текущему плану' : 'по договору'}</Label>
             <Big color={r.savingsKop < 0 ? t.danger : t.ok}>{formatRub(Math.abs(r.savingsKop), { kopecks: 'never' })}</Big>
             <Body muted>
-              {r.monthsSaved > 0 ? `Закроется на ${r.monthsSaved} мес. раньше` : r.monthsSaved < 0 ? `Закроется на ${-r.monthsSaved} мес. позже` : 'Срок прежний'} · {r.paymentAfterKop > 0 ? `платёж после: ${formatRub(r.paymentAfterKop, { kopecks: 'never' })}` : 'кредит будет закрыт'}
+              {r.monthsBeforeContract > 0 ? `На ${r.monthsBeforeContract} мес. раньше договора` : 'В срок по договору'} · {r.paymentAfterKop > 0 ? `в месяц: ${formatRub(r.monthlyOutlayKop, { kopecks: 'never' })}, обязательный платёж: ${formatRub(r.paymentAfterKop, { kopecks: 'never' })}` : 'кредит будет закрыт'}
             </Body>
           </Card>
         ))}

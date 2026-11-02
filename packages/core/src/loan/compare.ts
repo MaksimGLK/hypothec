@@ -122,6 +122,13 @@ export interface CandidateModeResult {
   monthsSaved: number;
   /** Обязательный платёж сразу после этой досрочки; 0 — кредит закрылся. */
   paymentAfterKop: Kop;
+  /** Сколько реально уходит в месяц: обязательный платёж, доплата до прежней суммы и ежемесячные досрочки. */
+  monthlyOutlayKop: Kop;
+  payoffDate: IsoDate;
+  /** На сколько месяцев раньше срока по договору. */
+  monthsBeforeContract: number;
+  /** Экономия на процентах по сравнению с договором без досрочек — вместе с уже запланированными. */
+  savingsVsContractKop: Kop;
 }
 
 export interface CandidateModeComparison {
@@ -139,15 +146,26 @@ export function compareCandidateModes(
   existing: readonly PrepaymentInput[],
   candidate: PrepaymentInput,
 ): CandidateModeComparison {
+  const contract = buildSchedule(loan, []);
   const base = buildSchedule(loan, existing);
   const withMode = (mode: PrepaymentMode): CandidateModeResult => {
-    const schedule = buildSchedule(loan, [...existing, { ...candidate, mode }]);
+    const all = [...existing, { ...candidate, mode }];
+    const schedule = buildSchedule(loan, all);
     const at = schedule.rows.findIndex((r) => r.prepaymentIds.includes(candidate.id));
     const after = at >= 0 ? schedule.rows.slice(at + 1).find((r) => r.kind === 'payment') : undefined;
+    const monthlyExtra = after
+      ? all
+          .filter((p) => p.kind === 'monthly' && after.date >= (p.startDate ?? loan.issueDate) && (!p.endDate || after.date <= p.endDate))
+          .reduce((sum, p) => sum + p.amountKop, 0)
+      : 0;
     return {
       savingsKop: base.summary.totalInterestKop - schedule.summary.totalInterestKop,
       monthsSaved: monthsBetween(schedule.summary.payoffDate, base.summary.payoffDate),
       paymentAfterKop: after?.paymentKop ?? 0,
+      monthlyOutlayKop: after ? after.paymentKop + after.keepExtraKop + monthlyExtra : 0,
+      payoffDate: schedule.summary.payoffDate,
+      monthsBeforeContract: monthsBetween(schedule.summary.payoffDate, contract.summary.payoffDate),
+      savingsVsContractKop: contract.summary.totalInterestKop - schedule.summary.totalInterestKop,
     };
   };
   return {

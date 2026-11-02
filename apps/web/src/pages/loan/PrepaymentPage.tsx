@@ -1,4 +1,4 @@
-import { addMonths, buildSchedule, compareCandidateModes, formatRub, type LoanInput, monthsBetween, type PrepaymentInput, type PrepaymentMode, prepaymentTimingEffect, rub } from '@hypothec/core';
+import { addMonths, buildSchedule, compareCandidateModes, formatMonthRu, formatRub, type LoanInput, monthsBetween, type PrepaymentInput, type PrepaymentMode, prepaymentTimingEffect, rub } from '@hypothec/core';
 import { AlertTriangle, Plus, Star, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
@@ -22,9 +22,9 @@ const today = () => new Date().toISOString().slice(0, 10);
 function toLoanInput(l: LoanDto): LoanInput {
   return { ...l, rateChanges: l.rateChanges ?? [] } as LoanInput;
 }
-/** Отменённые досрочки в расчёт не идут — как и в плане на сервере. */
+/** Как в плане на сервере: отменённые досрочки в расчёт не идут, внесённые считаются по сумме, которую принял банк. */
 function planned(list: PrepaymentScenarioDto['prepayments']) {
-  return list.filter((p) => p.status !== 'skipped') as PrepaymentInput[];
+  return list.filter((p) => p.status !== 'skipped').map((p) => ({ ...p, amountKop: p.factAmountKop ?? p.amountKop })) as PrepaymentInput[];
 }
 function months(n: number) {
   const y = Math.floor(n / 12);
@@ -108,7 +108,8 @@ function SimplePrepayment({ loan, scenario }: { loan: LoanDto; scenario?: Prepay
       const input = toLoanInput(loan);
       const base = buildSchedule(input, existing);
       const next = buildSchedule(input, [...existing, { id: 'q', loanId: loan.id, kind, amountKop: amount, mode: 'reduce_term', ...(kind === 'one_off' ? { date } : { startDate: date }) }]);
-      return { savings: base.summary.totalInterestKop - next.summary.totalInterestKop, months: monthsBetween(next.summary.payoffDate, base.summary.payoffDate), payoff: next.summary.payoffDate };
+      const contract = buildSchedule(input, []);
+      return { savings: base.summary.totalInterestKop - next.summary.totalInterestKop, months: monthsBetween(next.summary.payoffDate, contract.summary.payoffDate), payoff: next.summary.payoffDate };
     } catch {
       return null;
     }
@@ -136,7 +137,7 @@ function SimplePrepayment({ loan, scenario }: { loan: LoanDto; scenario?: Prepay
             <p className="text-2xl font-semibold text-ok">
               <Money kop={r.savings} />
             </p>
-            <p className="mt-1 text-sm">{r.months > 0 ? `Кредит закроется на ${months(r.months)} раньше — ` : 'Кредит закроется '}<DateText date={r.payoff} /></p>
+            <p className="mt-1 text-sm">{r.months > 0 ? `Кредит закроется на ${months(r.months)} раньше договора — ` : 'Кредит закроется в срок по договору — '}<DateText date={r.payoff} /></p>
             {scenario && (
               <Button size="sm" className="mt-3" loading={add.isPending} onClick={() => add.mutate({ loanId: loan.id, kind, amountKop: amount, mode: 'reduce_term', ...(kind === 'one_off' ? { date } : { startDate: date }) })}>
                 Добавить в план
@@ -183,6 +184,7 @@ function QuickCalculator({ loan, existing, scenario }: { loan: LoanDto; existing
     }
   }, [loan, existing, kind, amount, date]);
   const stopsKeepAmount = planned(existing).some((p) => p.mode === 'reduce_payment_keep_amount');
+  const hasPlan = planned(existing).length > 0;
 
   return (
     <Card title="Быстрый расчёт">
@@ -201,12 +203,11 @@ function QuickCalculator({ loan, existing, scenario }: { loan: LoanDto; existing
         </Field>
       </div>
       {result && (
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
           {(
             [
               ['reduce_term', result.reduceTerm],
               ['reduce_payment', result.reducePayment],
-              ['reduce_payment_keep_amount', result.reducePaymentKeepAmount],
             ] as const
           ).map(([mode, r]) => (
             <div key={mode} className={cx('rounded-xl border p-3', mode === 'reduce_term' ? 'border-primary bg-primary-soft' : 'border-border')}>
@@ -214,13 +215,29 @@ function QuickCalculator({ loan, existing, scenario }: { loan: LoanDto; existing
               <p className={cx('mt-2 text-xl font-semibold', r.savingsKop < 0 ? 'text-warn' : 'text-ok')}>
                 <Money kop={Math.abs(r.savingsKop)} />
               </p>
-              <p className="text-xs text-ink-2">{r.savingsKop < 0 ? 'больше переплата' : 'меньше переплата'}</p>
+              <p className="text-xs text-ink-2">
+                {r.savingsKop < 0 ? 'больше' : 'меньше'} переплата, чем {hasPlan ? 'по текущему плану' : 'по договору'}
+              </p>
+              {hasPlan && (
+                <p className="mt-1 text-xs text-ink-2">
+                  по сравнению с договором: {r.savingsVsContractKop < 0 ? 'больше' : 'меньше'} на <Money kop={Math.abs(r.savingsVsContractKop)} />
+                </p>
+              )}
               <p className="mt-2 text-sm">
-                {r.monthsSaved > 0 ? `закроется на ${months(r.monthsSaved)} раньше` : r.monthsSaved < 0 ? `закроется на ${months(-r.monthsSaved)} позже` : 'срок прежний'}
+                {r.monthsBeforeContract > 0 ? `на ${months(r.monthsBeforeContract)} раньше договора` : 'в срок по договору'} — {formatMonthRu(r.payoffDate)}
               </p>
-              <p className="text-sm text-ink-2">
-                {r.paymentAfterKop > 0 ? <>платёж после: <Money kop={r.paymentAfterKop} /></> : 'кредит будет закрыт'}
-              </p>
+              {r.paymentAfterKop > 0 ? (
+                <>
+                  <p className="mt-1 text-sm">
+                    будете платить в месяц: <Money kop={r.monthlyOutlayKop} className="font-medium" />
+                  </p>
+                  <p className="text-sm text-ink-2">
+                    обязательный платёж: <Money kop={r.paymentAfterKop} />
+                  </p>
+                </>
+              ) : (
+                <p className="mt-1 text-sm text-ink-2">кредит будет закрыт</p>
+              )}
               {scenario && (
                 <Button
                   size="sm"
@@ -237,8 +254,8 @@ function QuickCalculator({ loan, existing, scenario }: { loan: LoanDto; existing
         </div>
       )}
       <p className="mt-3 text-xs text-muted">
-        «Платить прежнюю сумму»: банк снижает обязательный платёж, а вы продолжаете платить столько же — разница уходит в досрочку. Экономия как при сокращении срока, но если доход упадёт, можно платить меньше.
-        {stopsKeepAmount && ' У вас уже есть досрочка с прежней суммой: вариант «Уменьшить платёж» значит, что с этой даты вы перестаёте доплачивать, поэтому переплата может вырасти.'}
+        Банк снизил платёж, но вы можете и дальше платить прежнюю сумму — разница уйдёт в досрочку. Экономия тогда будет как при сокращении срока, а если доход упадёт, можно платить меньше.
+        {stopsKeepAmount && ' У вас уже есть досрочка с прежней суммой: вариант «Уменьшить платёж» значит, что с этой даты вы перестаёте доплачивать, поэтому переплата по сравнению с текущим планом может вырасти, но срок по договору не меняется.'}
       </p>
     </Card>
   );

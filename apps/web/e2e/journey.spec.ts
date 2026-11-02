@@ -204,6 +204,10 @@ test('семья проходит путь: регистрация → маст�
   await page.goto('/loan/prepayment');
   await expect(page.getByText('Быстрый расчёт')).toBeVisible();
   await expect(page.getByText('меньше переплата').first()).toBeVisible();
+  await expect(page.getByText('будете платить в месяц').first()).toBeVisible();
+  await expect(page.getByText('обязательный платёж').first()).toBeVisible();
+  await expect(page.getByText(/раньше договора —/).first()).toBeVisible();
+  await expect(page.getByText(/в срок по договору —/).first()).toBeVisible();
   await page.getByRole('button', { name: /В сценарий «Основной план»/ }).first().click();
   await expect(page.getByText('Добавлено в сценарий')).toBeVisible();
   await page.screenshot({ path: shots('08-prepayment'), fullPage: true });
