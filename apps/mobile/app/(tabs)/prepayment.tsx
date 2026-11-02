@@ -40,8 +40,9 @@ export default function Prepayment() {
           ] as const
         ).map(([title, r]) => (
           <Card key={title} title={title}>
-            <Label>{r.savingsKop < 0 ? 'больше' : 'меньше'} переплата, чем {existing.length ? 'по текущему плану' : 'по договору'}</Label>
+            <Label>{r.savingsKop < 0 ? 'С этой досрочкой переплата вырастет на' : 'Эта досрочка экономит'}</Label>
             <Big color={r.savingsKop < 0 ? t.danger : t.ok}>{formatRub(Math.abs(r.savingsKop), { kopecks: 'never' })}</Big>
+            {existing.length > 0 && <Body>Всего со всеми досрочками: {r.savingsVsContractKop < 0 ? 'переплата больше на' : 'экономия'} {formatRub(Math.abs(r.savingsVsContractKop), { kopecks: 'never' })}</Body>}
             <Body muted>
               {r.monthsBeforeContract > 0 ? `На ${r.monthsBeforeContract} мес. раньше договора` : 'В срок по договору'} · {r.paymentAfterKop > 0 ? `в месяц: ${formatRub(r.monthlyOutlayKop, { kopecks: 'never' })}, обязательный платёж: ${formatRub(r.paymentAfterKop, { kopecks: 'never' })}` : 'кредит будет закрыт'}
             </Body>

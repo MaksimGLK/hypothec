@@ -190,7 +190,7 @@ test('семья проходит путь: регистрация → маст�
   // досрочка в простом режиме: одна сумма, сокращение срока
   await page.goto('/loan/prepayment');
   await expect(page.getByText('Сколько сэкономит досрочка')).toBeVisible();
-  await expect(page.getByText('Переплата станет меньше на')).toBeVisible();
+  await expect(page.getByText('Эта досрочка экономит')).toBeVisible();
   await page.screenshot({ path: shots('08a-prepayment-simple'), fullPage: true });
 
   // продвинутый режим: все разделы и полный калькулятор
@@ -206,7 +206,7 @@ test('семья проходит путь: регистрация → маст�
 
   await page.goto('/loan/prepayment');
   await expect(page.getByText('Быстрый расчёт')).toBeVisible();
-  await expect(page.getByText('меньше переплата').first()).toBeVisible();
+  await expect(page.getByText('Эта досрочка экономит').first()).toBeVisible();
   await expect(page.getByText('будете платить в месяц').first()).toBeVisible();
   await expect(page.getByText('обязательный платёж').first()).toBeVisible();
   await expect(page.getByText(/раньше договора —/).first()).toBeVisible();
@@ -215,6 +215,8 @@ test('семья проходит путь: регистрация → маст�
   await expect(page.getByText('Добавлено в сценарий')).toBeVisible();
   // ежемесячная досрочка в своё число
   await page.getByLabel('Как платить').first().selectOption('monthly');
+  // поверх уже добавленной досрочки видно и её экономию, и общую
+  await expect(page.getByText(/Всего со всеми досрочками/).first()).toBeVisible();
   await page.getByLabel('Какого числа').fill('5');
   await page.getByLabel('Сумма в месяц').fill('20000');
   await page.getByRole('button', { name: /В сценарий «Основной план»/ }).first().click();

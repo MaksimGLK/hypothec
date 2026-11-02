@@ -127,7 +127,7 @@ function SimplePrepayment({ loan, scenario }: { loan: LoanDto; scenario?: Prepay
       const base = buildSchedule(input, existing);
       const next = buildSchedule(input, [...existing, { id: 'q', loanId: loan.id, kind, amountKop: amount, mode: 'reduce_term', ...schedulePart(kind, date, day, loan) }]);
       const contract = buildSchedule(input, []);
-      return { savings: base.summary.totalInterestKop - next.summary.totalInterestKop, months: monthsBetween(next.summary.payoffDate, contract.summary.payoffDate), payoff: next.summary.payoffDate };
+      return { savings: base.summary.totalInterestKop - next.summary.totalInterestKop, total: contract.summary.totalInterestKop - next.summary.totalInterestKop, months: monthsBetween(next.summary.payoffDate, contract.summary.payoffDate), payoff: next.summary.payoffDate };
     } catch {
       return null;
     }
@@ -152,10 +152,15 @@ function SimplePrepayment({ loan, scenario }: { loan: LoanDto; scenario?: Prepay
         </div>
         {r && (
           <div className="mt-4 rounded-xl bg-primary-soft p-4">
-            <p className="text-sm text-ink-2">Переплата станет меньше на</p>
+            <p className="text-sm text-ink-2">Эта досрочка экономит</p>
             <p className="text-2xl font-semibold text-ok">
               <Money kop={r.savings} />
             </p>
+            {existing.length > 0 && (
+              <p className="mt-1 text-sm">
+                Всего со всеми досрочками: экономия <Money kop={r.total} className="font-medium" />
+              </p>
+            )}
             <p className="mt-1 text-sm">{r.months > 0 ? `Кредит закроется на ${months(r.months)} раньше договора — ` : 'Кредит закроется в срок по договору — '}<DateText date={r.payoff} /></p>
             {scenario && (
               <Button size="sm" className="mt-3" loading={add.isPending} onClick={() => add.mutate({ loanId: loan.id, kind, amountKop: amount, mode: 'reduce_term', ...schedulePart(kind, date, day, loan) })}>
@@ -233,20 +238,24 @@ function QuickCalculator({ loan, existing, scenario }: { loan: LoanDto; existing
           ).map(([mode, r]) => (
             <div key={mode} className={cx('rounded-xl border p-3', mode === 'reduce_term' ? 'border-primary bg-primary-soft' : 'border-border')}>
               <p className="text-sm font-medium">{MODE_LABEL[mode]}</p>
-              <p className={cx('mt-2 text-xl font-semibold', r.savingsKop < 0 ? 'text-warn' : 'text-ok')}>
+              <p className="mt-2 text-xs text-ink-2">{r.savingsKop < 0 ? 'С этой досрочкой переплата вырастет на' : 'Эта досрочка экономит'}</p>
+              <p className={cx('text-xl font-semibold', r.savingsKop < 0 ? 'text-warn' : 'text-ok')}>
                 <Money kop={Math.abs(r.savingsKop)} />
               </p>
               <p className="text-xs text-ink-2">
-                {r.savingsKop < 0 ? 'больше' : 'меньше'} переплата, чем {hasPlan ? 'по текущему плану' : 'по договору'}
+                срок: {r.monthsSaved > 0 ? `на ${months(r.monthsSaved)} короче` : r.monthsSaved < 0 ? `на ${months(-r.monthsSaved)} дольше текущего плана` : 'не меняется'}
               </p>
-              {hasPlan && (
-                <p className="mt-1 text-xs text-ink-2">
-                  по сравнению с договором: {r.savingsVsContractKop < 0 ? 'больше' : 'меньше'} на <Money kop={Math.abs(r.savingsVsContractKop)} />
+              <div className="mt-2 border-t border-border pt-2">
+                {hasPlan && (
+                  <p className="text-sm">
+                    Всего со всеми досрочками: {r.savingsVsContractKop < 0 ? 'переплата больше на ' : 'экономия '}
+                    <Money kop={Math.abs(r.savingsVsContractKop)} className="font-medium" />
+                  </p>
+                )}
+                <p className="text-sm">
+                  Закрытие: {r.monthsBeforeContract > 0 ? `на ${months(r.monthsBeforeContract)} раньше договора` : 'в срок по договору'} — {formatMonthRu(r.payoffDate)}
                 </p>
-              )}
-              <p className="mt-2 text-sm">
-                {r.monthsBeforeContract > 0 ? `на ${months(r.monthsBeforeContract)} раньше договора` : 'в срок по договору'} — {formatMonthRu(r.payoffDate)}
-              </p>
+              </div>
               {r.paymentAfterKop > 0 ? (
                 <>
                   <p className="mt-1 text-sm">
