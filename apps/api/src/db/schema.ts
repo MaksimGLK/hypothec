@@ -289,13 +289,30 @@ export const spendings = pgTable(
     date: day('date').notNull(),
     amountKop: kop('amount_kop').notNull(),
     note: text('note'),
-    /** manual — внесена вручную, plan — кнопка «Оплачено», auto — автоплатёж. */
+    /** manual — внесена вручную, plan — кнопка «Оплачено», auto — автоплатёж, import — из выписки банка. */
     source: text('source').notNull().default('manual'),
+    /** Ключ операции из выписки — повторная загрузка той же выписки не задваивает траты. */
+    importKey: text('import_key'),
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
     version: version(),
     ...timestamps,
   },
-  (t) => [index('spendings_household_date').on(t.householdId, t.date)],
+  (t) => [index('spendings_household_date').on(t.householdId, t.date), uniqueIndex('spendings_import_key').on(t.householdId, t.importKey)],
+);
+
+/** Запомненные исправления категорий при импорте выписок: такой получатель → такая категория. */
+export const categorizationRules = pgTable(
+  'categorization_rules',
+  {
+    id: id(),
+    householdId: householdRef(),
+    merchantKey: text('merchant_key').notNull(),
+    categoryId: uuid('category_id')
+      .notNull()
+      .references(() => livingExpenses.id, { onDelete: 'cascade' }),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex('categorization_rules_unique').on(t.householdId, t.merchantKey)],
 );
 
 export const accounts = pgTable('accounts', {

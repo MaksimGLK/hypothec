@@ -80,6 +80,25 @@ test('семья проходит путь: регистрация → маст�
   await page.getByLabel('Новый доход: сумма').fill('60000');
   await page.getByRole('button', { name: 'Добавить доход' }).click();
   await expect(page.getByText('Доход добавлен')).toBeVisible();
+  // разовый доход: с датой, виден только в своём месяце
+  const ym = new Date().toISOString().slice(0, 7);
+  await page.getByRole('radio', { name: 'Разовый' }).click();
+  await page.getByLabel('Новый доход: название').fill('Продажа машины');
+  await page.getByLabel('Новый доход: дата').fill(`${ym}-27`);
+  await page.getByLabel('Новый доход: сумма').fill('200000');
+  await page.getByRole('button', { name: 'Добавить доход' }).click();
+  await expect(page.getByRole('button', { name: 'Дата поступления: изменить' })).toContainText('27');
+  await expect(page.getByText('Разово в этом месяце')).toBeVisible();
+  await page.getByRole('button', { name: 'Дата поступления: изменить' }).click();
+  await page.getByLabel('Дата поступления', { exact: true }).fill(`${ym}-28`);
+  await page.getByLabel('Дата поступления', { exact: true }).press('Enter');
+  await expect(page.getByRole('button', { name: 'Дата поступления: изменить' })).toContainText('28');
+  await page.getByRole('button', { name: 'Следующий месяц' }).click();
+  await expect(page.getByRole('button', { name: 'Дата поступления: изменить' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Предыдущий месяц' }).click();
+  await page.screenshot({ path: shots('03a-month-once'), fullPage: true });
+  await page.getByRole('button', { name: 'Удалить: Продажа машины' }).click();
+  await expect(page.getByText('Разово в этом месяце')).toHaveCount(0);
   // план расходов правится в строке
   await page.getByRole('button', { name: 'План: Продукты: изменить' }).click();
   await page.getByLabel('План: Продукты').fill('42000');
@@ -107,6 +126,16 @@ test('семья проходит путь: регистрация → маст�
   await expect(page.getByText('Факт сохранён — остаток счёта обновлён')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Факт: Подушка: изменить' })).toContainText('15 000');
   await page.screenshot({ path: shots('03a-month'), fullPage: true });
+
+  // выписка из банка: разбор, категории, внесение
+  await page.getByRole('link', { name: 'Загрузить выписку' }).first().click();
+  await page.getByLabel('Файл выписки').setInputFiles('e2e/fixtures/tbank.csv');
+  await expect(page.getByText(/Т-Банк ·/)).toBeVisible();
+  await expect(page.getByLabel('Категория: Пятёрочка')).toHaveValue(/.+/);
+  await page.screenshot({ path: shots('03b-import'), fullPage: true });
+  await page.getByRole('button', { name: /^Внести 2 траты/ }).click();
+  await expect(page.getByRole('heading', { name: 'Мой месяц' })).toBeVisible();
+  await expect(page.getByText(/Внесено трат: 2/)).toBeVisible();
 
   // доходы одной строкой — подробный раздел
   await page.goto('/money/incomes');

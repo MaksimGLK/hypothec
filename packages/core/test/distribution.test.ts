@@ -3,6 +3,17 @@ import { incomeDistribution, rub } from '../src/index.js';
 import { quietFamily } from './fixtures.js';
 
 describe('куда уходит доход месяца', () => {
+  it('разовый доход попадает только в месяц своей даты', () => {
+    const base = quietFamily();
+    const input = quietFamily({
+      incomes: [...base.incomes, { id: 'once', name: 'Продажа машины', type: 'one_off', amountKop: rub(200_000), periodicity: 'once', date: '2026-11-12', reliability: 'unstable' }],
+    });
+    expect(incomeDistribution(input, '2026-11').incomeKop).toBe(rub(550_000));
+    expect(incomeDistribution(input, '2026-12').incomeKop).toBe(incomeDistribution(base, '2026-12').incomeKop);
+    const total = incomeDistribution(input, '2026-11').segments.reduce((s, x) => s + x.amountKop, 0);
+    expect(total).toBe(rub(550_000));
+  });
+
   it('доход месяца целиком разложен по частям — сумма долей 100%', () => {
     const d = incomeDistribution(quietFamily(), '2026-11');
     expect(d.incomeKop).toBe(rub(350_000));

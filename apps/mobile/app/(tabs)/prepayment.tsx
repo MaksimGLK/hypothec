@@ -1,4 +1,4 @@
-import { addMonths, compareModes, formatRub, type LoanInput, type PrepaymentInput, rub } from '@hypothec/core';
+import { addMonths, compareCandidateModes, formatRub, type LoanInput, type PrepaymentInput, rub } from '@hypothec/core';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, ScrollView } from 'react-native';
 import { useHh } from '../../src/household';
@@ -24,7 +24,7 @@ export default function Prepayment() {
     const today = new Date().toISOString().slice(0, 10);
     const date = addMonths(today > loan.issueDate ? today : loan.issueDate, 1);
     const p: PrepaymentInput = { id: 'mobile', loanId: loan.id, kind: 'one_off', amountKop: rub(amount), date, mode: 'reduce_term' };
-    return { base: compareModes(input, existing), next: compareModes(input, [...existing, p]) };
+    return compareCandidateModes(input, existing, p);
   }, [loan, existing, amountText]);
 
   if (loans.isLoading) return <ActivityIndicator style={{ marginTop: 40 }} color={t.primary} />;
@@ -35,16 +35,16 @@ export default function Prepayment() {
       {result &&
         (
           [
-            ['Сократить срок', result.next.reduceTerm, result.base.reduceTerm],
-            ['Уменьшить платёж', result.next.reducePayment, result.base.reducePayment],
-            ['Уменьшить платёж, платить прежнюю сумму', result.next.reducePaymentKeepAmount, result.base.reducePaymentKeepAmount],
+            ['Сократить срок', result.reduceTerm],
+            ['Уменьшить платёж', result.reducePayment],
+            ['Уменьшить платёж, платить прежнюю сумму', result.reducePaymentKeepAmount],
           ] as const
-        ).map(([title, r, b]) => (
+        ).map(([title, r]) => (
           <Card key={title} title={title}>
-            <Label>меньше переплата</Label>
-            <Big color={t.ok}>{formatRub(r.savingsKop - b.savingsKop, { kopecks: 'never' })}</Big>
+            <Label>{r.savingsKop < 0 ? 'больше переплата' : 'меньше переплата'}</Label>
+            <Big color={r.savingsKop < 0 ? t.danger : t.ok}>{formatRub(Math.abs(r.savingsKop), { kopecks: 'never' })}</Big>
             <Body muted>
-              {r.monthsSaved - b.monthsSaved > 0 ? `Закроется на ${r.monthsSaved - b.monthsSaved} мес. раньше` : 'Срок прежний'} · платёж после: {formatRub(r.paymentAfterFirstPrepaymentKop, { kopecks: 'never' })}
+              {r.monthsSaved > 0 ? `Закроется на ${r.monthsSaved} мес. раньше` : r.monthsSaved < 0 ? `Закроется на ${-r.monthsSaved} мес. позже` : 'Срок прежний'} · {r.paymentAfterKop > 0 ? `платёж после: ${formatRub(r.paymentAfterKop, { kopecks: 'never' })}` : 'кредит будет закрыт'}
             </Body>
           </Card>
         ))}

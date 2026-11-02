@@ -7,7 +7,7 @@ import { useHh, useHhMutation, useHousehold } from '../api/household.js';
 import type { AccountDto, IncomeDto, LivingDto, SettingsDto } from '../api/types.js';
 import { DistributionCard } from '../components/distribution.js';
 import { PendingPrepayments } from '../components/pending-prepayments.js';
-import { DayCell, FactCell, MoneyCell, TextCell } from '../components/inline.js';
+import { DateCell, DayCell, FactCell, MoneyCell, TextCell } from '../components/inline.js';
 import { Term } from '../components/learning.js';
 import { Badge, Button, Card, cx, Input, Money, MoneyInput, Segmented, Spinner } from '../components/ui/index.js';
 import { useToast } from '../components/ui/toast.js';
@@ -71,11 +71,20 @@ export default function MonthPage() {
         </div>
       )}
 
-      <Section n={1} title="Доходы" hint="Зарплаты, авансы, аренда, премии — с днём поступления.">
-        <Incomes />
+      <Section n={1} title="Доходы" hint="Зарплаты, авансы, аренда, премии — с днём поступления. Разовые деньги — с датой.">
+        <Incomes month={month} onMonth={setMonth} />
       </Section>
 
-      <Section n={2} title="Расходы на жизнь" hint="План на месяц по категориям и сколько уже потрачено.">
+      <Section
+        n={2}
+        title="Расходы на жизнь"
+        hint="План на месяц по категориям и сколько уже потрачено."
+        action={
+          <Link to="/budget/import" className="shrink-0 rounded-xl border border-border px-3 py-1.5 text-sm text-primary hover:bg-surface-2">
+            Загрузить выписку
+          </Link>
+        }
+      >
         <Living month={month} />
       </Section>
 
@@ -106,15 +115,16 @@ function Tile({ label, kop, tone, sub }: { label: string; kop: number; tone?: 'p
   );
 }
 
-function Section({ n, title, hint, children }: { n: number; title: string; hint: string; children: ReactNode }) {
+function Section({ n, title, hint, children, action }: { n: number; title: string; hint: string; children: ReactNode; action?: ReactNode }) {
   return (
     <Card>
       <div className="mb-3 flex items-start gap-3">
         <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary-soft text-sm font-semibold text-primary">{n}</span>
-        <div>
+        <div className="flex-1">
           <h2 className="font-semibold">{title}</h2>
           <p className="text-sm text-ink-2">{hint}</p>
         </div>
+        {action}
       </div>
       {children}
     </Card>
@@ -131,18 +141,40 @@ function Total({ label, kop }: { label: string; kop: number }) {
 }
 
 // ── 1. Доходы ──
-function Incomes() {
+function Incomes({ month, onMonth }: { month: string; onMonth(month: string): void }) {
   const incomes = useHh<IncomeDto[]>('/incomes');
   const add = useHhMutation<Record<string, unknown>>('POST', '/incomes', { success: 'Доход добавлен' });
   const [name, setName] = useState('');
   const [day, setDay] = useState('');
   const [amount, setAmount] = useState<number | null>(null);
+  const [kind, setKind] = useState<'monthly' | 'once'>('monthly');
+  const [date, setDate] = useState('');
   if (incomes.isLoading) return <Spinner />;
-  const list = incomes.data ?? [];
+  const today = todayIso();
+  const onceDate = date || (today.startsWith(month) ? today : `${month}-01`);
+  // по дню поступления; разовые — только в своём месяце; квартальные и годовые — без дня в месяце, идут в конце
+  const dayOf = (i: IncomeDto) => (i.periodicity === 'monthly' ? (i.dayOfMonth ?? 32) : i.periodicity === 'once' && i.date ? Number(i.date.slice(8, 10)) : 32);
+  const list = (incomes.data ?? [])
+    .filter((i) => i.periodicity !== 'once' || i.date?.startsWith(month))
+    .sort((a, b) => dayOf(a) - dayOf(b) || a.name.localeCompare(b.name, 'ru'));
   const monthly = list.filter((i) => i.periodicity === 'monthly').reduce((s, i) => s + i.amountKop, 0);
+  const once = list.filter((i) => i.periodicity === 'once').reduce((s, i) => s + i.amountKop, 0);
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !amount) return;
+    if (kind === 'once') {
+      add.mutate(
+        { name: name.trim(), type: 'one_off', amountKop: amount, periodicity: 'once', date: onceDate, reliability: 'unstable' },
+        {
+          onSuccess: () => {
+            setName(''), setDate(''), setAmount(null);
+            // добавили на другой месяц — показываем его, иначе строка просто не появится
+            if (!onceDate.startsWith(month)) onMonth(onceDate.slice(0, 7));
+          },
+        },
+      );
+      return;
+    }
     const dayNum = Math.max(1, Math.min(31, Number(day) || 1));
     add.mutate(
       { name: name.trim(), type: /аванс/i.test(name) ? 'advance' : /прем/i.test(name) ? 'bonus' : /аренд|квартирант/i.test(name) ? 'rent' : 'salary', amountKop: amount, periodicity: 'monthly', dayOfMonth: dayNum, reliability: /прем|подработ/i.test(name) ? 'unstable' : 'stable' },
@@ -156,17 +188,25 @@ function Incomes() {
           <IncomeRow key={i.id} income={i} />
         ))}
       </ul>
-      <form className="mt-2 grid grid-cols-[64px_1fr_auto] gap-2 sm:grid-cols-[1fr_64px_120px_auto]" onSubmit={submit}>
-        <Input aria-label="Новый доход: название" placeholder="Например, Зарплата Максим" className="col-span-3 h-9 sm:col-span-1" value={name} onChange={(e) => setName(e.target.value)} />
-        <Input aria-label="Новый доход: день" placeholder="день" inputMode="numeric" className="h-9 text-center" value={day} onChange={(e) => setDay(e.target.value.replace(/\D/g, '').slice(0, 2))} />
+      <div className="mt-2">
+        <Segmented label="Новый доход" value={kind} onChange={setKind} options={[{ value: 'monthly', label: 'Каждый месяц' }, { value: 'once', label: 'Разовый' }]} />
+      </div>
+      <form className={cx('mt-2 grid gap-2', kind === 'once' ? 'grid-cols-[150px_1fr_auto] sm:grid-cols-[1fr_150px_120px_auto]' : 'grid-cols-[64px_1fr_auto] sm:grid-cols-[1fr_64px_120px_auto]')} onSubmit={submit}>
+        <Input aria-label="Новый доход: название" placeholder={kind === 'once' ? 'Например, Продажа машины' : 'Например, Зарплата Максим'} className="col-span-3 h-9 sm:col-span-1" value={name} onChange={(e) => setName(e.target.value)} />
+        {kind === 'once' ? (
+          <Input aria-label="Новый доход: дата" type="date" className="h-9" value={onceDate} onChange={(e) => setDate(e.target.value)} />
+        ) : (
+          <Input aria-label="Новый доход: день" placeholder="день" inputMode="numeric" className="h-9 text-center" value={day} onChange={(e) => setDay(e.target.value.replace(/\D/g, '').slice(0, 2))} />
+        )}
         <MoneyInput aria-label="Новый доход: сумма" value={amount} onChange={setAmount} />
         <Button type="submit" size="sm" aria-label="Добавить доход" disabled={!name.trim() || !amount} loading={add.isPending}>
           <Plus className="size-4" />
         </Button>
       </form>
       <Total label="Каждый месяц" kop={monthly} />
+      {once > 0 && <Total label="Разово в этом месяце" kop={once} />}
       <p className="mt-1 px-2 text-xs text-muted">
-        <Term k="reliability">Надёжность</Term>: нажмите на метку, чтобы поменять. Нестабильные деньги (премии) идут на цели, а не на ипотеку. Квартальные и разовые поступления —
+        <Term k="reliability">Надёжность</Term>: нажмите на метку, чтобы поменять. Нестабильные деньги (премии, разовые) идут на цели, а не на ипотеку. Квартальные и годовые поступления —
         в разделе <Link to="/money/incomes" className="text-primary">Доходы</Link>.
       </p>
     </>
@@ -183,8 +223,10 @@ function IncomeRow({ income }: { income: IncomeDto }) {
       <TextCell value={income.name} label="Название дохода" className="min-w-[40%] flex-1" onSave={(name) => patch({ name })} />
       {income.periodicity === 'monthly' ? (
         <DayCell value={income.dayOfMonth} label="День поступления" onSave={(dayOfMonth) => patch({ dayOfMonth })} />
+      ) : income.periodicity === 'once' ? (
+        <DateCell value={income.date} label="Дата поступления" onSave={(date) => patch({ date })} />
       ) : (
-        <span className="w-14 text-center text-xs text-muted">{income.periodicity === 'once' ? 'разово' : income.periodicity === 'quarterly' ? 'квартал' : 'год'}</span>
+        <span className="w-14 text-center text-xs text-muted">{income.periodicity === 'quarterly' ? 'квартал' : 'год'}</span>
       )}
       <button type="button" onClick={() => patch({ reliability: r.next })} aria-label={`Надёжность: ${r.label}. Поменять`} className="hidden sm:block">
         <Badge tone={r.tone}>{r.label}</Badge>

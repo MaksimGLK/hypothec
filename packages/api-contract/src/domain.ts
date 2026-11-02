@@ -148,7 +148,7 @@ const SpendingFields = z.object({
   date: IsoDate,
   amountKop: Kop.refine((v) => v > 0, 'Сумма должна быть больше нуля'),
   note: z.string().trim().max(200).nullable().optional(),
-  source: z.enum(['manual', 'plan', 'auto']).optional(),
+  source: z.enum(['manual', 'plan', 'auto', 'import']).optional(),
 });
 export const Spending = SpendingFields.extend({ id: Id, version: Version, createdBy: Id.nullable().optional() });
 export type Spending = z.infer<typeof Spending>;
@@ -166,6 +166,43 @@ export const SetContributionRequest = z.object({
   month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Месяц в формате ГГГГ-ММ'),
   amountKop: Kop,
 });
+// ── Импорт выписки банка ──
+const Cell = z.union([z.string().max(1000), z.number(), z.null()]);
+export const StatementMapping = z.object({
+  date: z.number().int().min(0),
+  amount: z.number().int().min(0).optional(),
+  income: z.number().int().min(0).optional(),
+  expense: z.number().int().min(0).optional(),
+  description: z.number().int().min(0),
+  category: z.number().int().min(0).optional(),
+  mcc: z.number().int().min(0).optional(),
+  status: z.number().int().min(0).optional(),
+  currency: z.number().int().min(0).optional(),
+  direction: z.number().int().min(0).optional(),
+});
+export const ImportPreviewRequest = z.object({
+  /** Таблица выписки: строки CSV или листа Excel (даты из Excel — строкой ГГГГ-ММ-ДД). */
+  rows: z.array(z.array(Cell).max(60)).min(1).max(5000),
+  manual: z.object({ headerRow: z.number().int().min(0), mapping: StatementMapping }).optional(),
+});
+export const ImportCommitRequest = z.object({
+  items: z
+    .array(
+      z.object({
+        importKey: z.string().min(1).max(300),
+        merchantKey: z.string().max(200),
+        date: IsoDate,
+        amountKop: Kop.refine((v) => v > 0),
+        description: z.string().max(300),
+        categoryId: Id.nullable(),
+      }),
+    )
+    .min(1)
+    .max(5000),
+  /** Запомнить выбранные категории для этих получателей. */
+  learn: z.boolean().default(true),
+});
+
 export const ParseSpendingRequest = z.object({ text: z.string().trim().min(1).max(200) });
 export const BootstrapBudgetRequest = z.object({
   /** Ключи категорий из справочника; по умолчанию — стартовый набор. */

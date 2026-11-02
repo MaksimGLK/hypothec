@@ -115,3 +115,44 @@ export function compareModes(loan: LoanInput, prepayments: readonly PrepaymentIn
     ),
   };
 }
+
+export interface CandidateModeResult {
+  /** Экономия на процентах именно от этой досрочки — поверх уже запланированных. */
+  savingsKop: Kop;
+  monthsSaved: number;
+  /** Обязательный платёж сразу после этой досрочки; 0 — кредит закрылся. */
+  paymentAfterKop: Kop;
+}
+
+export interface CandidateModeComparison {
+  reduceTerm: CandidateModeResult;
+  reducePayment: CandidateModeResult;
+  reducePaymentKeepAmount: CandidateModeResult;
+}
+
+/**
+ * Новая досрочка в трёх режимах поверх уже запланированных.
+ * Режим меняется только у новой: прошлые досрочки уже внесены или выбраны — и остаются как есть.
+ */
+export function compareCandidateModes(
+  loan: LoanInput,
+  existing: readonly PrepaymentInput[],
+  candidate: PrepaymentInput,
+): CandidateModeComparison {
+  const base = buildSchedule(loan, existing);
+  const withMode = (mode: PrepaymentMode): CandidateModeResult => {
+    const schedule = buildSchedule(loan, [...existing, { ...candidate, mode }]);
+    const at = schedule.rows.findIndex((r) => r.prepaymentIds.includes(candidate.id));
+    const after = at >= 0 ? schedule.rows.slice(at + 1).find((r) => r.kind === 'payment') : undefined;
+    return {
+      savingsKop: base.summary.totalInterestKop - schedule.summary.totalInterestKop,
+      monthsSaved: monthsBetween(schedule.summary.payoffDate, base.summary.payoffDate),
+      paymentAfterKop: after?.paymentKop ?? 0,
+    };
+  };
+  return {
+    reduceTerm: withMode('reduce_term'),
+    reducePayment: withMode('reduce_payment'),
+    reducePaymentKeepAmount: withMode('reduce_payment_keep_amount'),
+  };
+}

@@ -36,6 +36,13 @@
       "when": 1791726992961,
       "tag": "0004_prepayment_status",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791737058049,
+      "tag": "0005_statement_import",
+      "breakpoints": true
     }
   ]
 }

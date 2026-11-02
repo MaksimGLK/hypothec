@@ -88,6 +88,7 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
       livingExpenses: await byH(s.livingExpenses as never),
       spendings: await byH(s.spendings as never),
       goalContributions: await byH(s.goalContributions as never),
+      categorizationRules: await byH(s.categorizationRules as never),
       incomes: await byH(s.incomes as never),
       accounts: await byH(s.accounts as never),
       prepaymentScenarios: await byH(s.prepaymentScenarios as never),

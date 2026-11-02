@@ -1,6 +1,7 @@
 import { addMonths, BUDGET_GROUP_LABELS, type BudgetCatalogItem, type BudgetMonth, formatDateRu, formatMonthRu, formatRub, type SpendingDraft } from '@hypothec/core';
 import { ChevronLeft, ChevronRight, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { type FormEvent, useMemo, useState } from 'react';
+import { Link } from 'react-router';
 import { useAuth } from '../api/auth.js';
 import { useHh, useHhMutation } from '../api/household.js';
 import type { LivingDto } from '../api/types.js';
@@ -88,9 +89,14 @@ export default function BudgetPage() {
           <section>
             <div className="mb-2 flex items-center justify-between">
               <h2 className="text-lg font-semibold">Категории</h2>
-              <Button size="sm" variant="ghost" onClick={() => setAdding(true)}>
-                <Plus className="size-4" aria-hidden /> Категория
-              </Button>
+              <div className="flex gap-1">
+                <Link to="/budget/import" className="rounded-xl px-3 py-1.5 text-sm text-primary hover:bg-surface-2">
+                  Загрузить выписку
+                </Link>
+                <Button size="sm" variant="ghost" onClick={() => setAdding(true)}>
+                  <Plus className="size-4" aria-hidden /> Категория
+                </Button>
+              </div>
             </div>
             <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
               {withPlan.map((c) => (

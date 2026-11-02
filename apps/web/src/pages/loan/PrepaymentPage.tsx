@@ -1,4 +1,4 @@
-import { addMonths, buildSchedule, compareModes, formatRub, type LoanInput, monthsBetween, type PrepaymentInput, type PrepaymentMode, prepaymentTimingEffect, rub } from '@hypothec/core';
+import { addMonths, buildSchedule, compareCandidateModes, formatRub, type LoanInput, monthsBetween, type PrepaymentInput, type PrepaymentMode, prepaymentTimingEffect, rub } from '@hypothec/core';
 import { AlertTriangle, Plus, Star, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
@@ -21,6 +21,10 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 function toLoanInput(l: LoanDto): LoanInput {
   return { ...l, rateChanges: l.rateChanges ?? [] } as LoanInput;
+}
+/** Отменённые досрочки в расчёт не идут — как и в плане на сервере. */
+function planned(list: PrepaymentScenarioDto['prepayments']) {
+  return list.filter((p) => p.status !== 'skipped') as PrepaymentInput[];
 }
 function months(n: number) {
   const y = Math.floor(n / 12);
@@ -95,7 +99,7 @@ function SimplePrepayment({ loan, scenario }: { loan: LoanDto; scenario?: Prepay
   const [kind, setKind] = useState<'one_off' | 'monthly'>('one_off');
   const [amount, setAmount] = useState<number | null>(rub(300_000));
   const [date, setDate] = useState(() => (today() > loan.issueDate ? addMonths(today(), 1) : addMonths(loan.issueDate, 1)));
-  const existing = (scenario?.prepayments ?? []) as PrepaymentInput[];
+  const existing = planned(scenario?.prepayments ?? []);
   const add = useHhMutation<Record<string, unknown>>('POST', `/prepayment-scenarios/${scenario?.id}/prepayments`, { success: 'Добавлено в план' });
   const removePp = useHhMutation<{ _id: string }>('DELETE', (b) => `/prepayment-scenarios/${scenario?.id}/prepayments/${b._id}`, { success: 'Убрано из плана' });
   const r = useMemo(() => {
@@ -173,18 +177,12 @@ function QuickCalculator({ loan, existing, scenario }: { loan: LoanDto; existing
     if (!amount) return null;
     const p: PrepaymentInput = { id: 'quick', loanId: loan.id, kind, amountKop: amount, mode: 'reduce_term', ...(kind === 'one_off' ? { date } : { startDate: date }) };
     try {
-      return compareModes(toLoanInput(loan), [...(existing as PrepaymentInput[]), p]);
+      return compareCandidateModes(toLoanInput(loan), planned(existing), p);
     } catch {
       return null;
     }
   }, [loan, existing, kind, amount, date]);
-  const base = useMemo(() => {
-    try {
-      return compareModes(toLoanInput(loan), existing as PrepaymentInput[]);
-    } catch {
-      return null;
-    }
-  }, [loan, existing]);
+  const stopsKeepAmount = planned(existing).some((p) => p.mode === 'reduce_payment_keep_amount');
 
   return (
     <Card title="Быстрый расчёт">
@@ -202,26 +200,26 @@ function QuickCalculator({ loan, existing, scenario }: { loan: LoanDto; existing
           <Input id="q-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </Field>
       </div>
-      {result && base && (
+      {result && (
         <div className="mt-4 grid gap-3 md:grid-cols-3">
           {(
             [
-              ['reduce_term', result.reduceTerm, base.reduceTerm],
-              ['reduce_payment', result.reducePayment, base.reducePayment],
-              ['reduce_payment_keep_amount', result.reducePaymentKeepAmount, base.reducePaymentKeepAmount],
+              ['reduce_term', result.reduceTerm],
+              ['reduce_payment', result.reducePayment],
+              ['reduce_payment_keep_amount', result.reducePaymentKeepAmount],
             ] as const
-          ).map(([mode, r, b]) => (
+          ).map(([mode, r]) => (
             <div key={mode} className={cx('rounded-xl border p-3', mode === 'reduce_term' ? 'border-primary bg-primary-soft' : 'border-border')}>
               <p className="text-sm font-medium">{MODE_LABEL[mode]}</p>
-              <p className="mt-2 text-xl font-semibold text-ok">
-                <Money kop={r.savingsKop - b.savingsKop} />
+              <p className={cx('mt-2 text-xl font-semibold', r.savingsKop < 0 ? 'text-warn' : 'text-ok')}>
+                <Money kop={Math.abs(r.savingsKop)} />
               </p>
-              <p className="text-xs text-ink-2">меньше переплата</p>
+              <p className="text-xs text-ink-2">{r.savingsKop < 0 ? 'больше переплата' : 'меньше переплата'}</p>
               <p className="mt-2 text-sm">
-                {r.monthsSaved - b.monthsSaved > 0 ? `закроется на ${months(r.monthsSaved - b.monthsSaved)} раньше` : 'срок прежний'}
+                {r.monthsSaved > 0 ? `закроется на ${months(r.monthsSaved)} раньше` : r.monthsSaved < 0 ? `закроется на ${months(-r.monthsSaved)} позже` : 'срок прежний'}
               </p>
               <p className="text-sm text-ink-2">
-                платёж после: <Money kop={r.paymentAfterFirstPrepaymentKop} />
+                {r.paymentAfterKop > 0 ? <>платёж после: <Money kop={r.paymentAfterKop} /></> : 'кредит будет закрыт'}
               </p>
               {scenario && (
                 <Button
@@ -240,6 +238,7 @@ function QuickCalculator({ loan, existing, scenario }: { loan: LoanDto; existing
       )}
       <p className="mt-3 text-xs text-muted">
         «Платить прежнюю сумму»: банк снижает обязательный платёж, а вы продолжаете платить столько же — разница уходит в досрочку. Экономия как при сокращении срока, но если доход упадёт, можно платить меньше.
+        {stopsKeepAmount && ' У вас уже есть досрочка с прежней суммой: вариант «Уменьшить платёж» значит, что с этой даты вы перестаёте доплачивать, поэтому переплата может вырасти.'}
       </p>
     </Card>
   );
@@ -296,7 +295,7 @@ function ScenarioEditor({ scenario, loan }: { scenario: PrepaymentScenarioDto; l
   const sim = useMemo(() => {
     try {
       const input = toLoanInput(loan);
-      const s = buildSchedule(input, scenario.prepayments as PrepaymentInput[]);
+      const s = buildSchedule(input, planned(scenario.prepayments));
       const b = buildSchedule(input, []);
       return { s, savings: b.summary.totalInterestKop - s.summary.totalInterestKop, monthsSaved: monthsBetween(s.summary.payoffDate, b.summary.payoffDate) };
     } catch {
@@ -515,7 +514,7 @@ function Timing({ loan, existing }: { loan: LoanDto; existing: PrepaymentScenari
     if (!amount) return null;
     const start = today() > loan.issueDate ? today() : addMonths(loan.issueDate, 1);
     try {
-      return prepaymentTimingEffect(toLoanInput(loan), amount, [start, addMonths(start, 12), addMonths(start, 36), addMonths(start, 60), addMonths(start, 120)], 'reduce_term', existing as PrepaymentInput[]);
+      return prepaymentTimingEffect(toLoanInput(loan), amount, [start, addMonths(start, 12), addMonths(start, 36), addMonths(start, 60), addMonths(start, 120)], 'reduce_term', planned(existing));
     } catch {
       return null;
     }

@@ -165,6 +165,12 @@ export function buildSchedule(loan: LoanInput, prepayments: readonly PrepaymentI
     }
   };
 
+  /** Обычное «уменьшить платёж» отменяет прежнее «платить прежнюю сумму»: с этой даты семья платит меньше. */
+  const applyPrepayment = (m: PrepaymentMode) => {
+    if (m === 'reduce_payment') keepTarget = null;
+    recalcAfterPrepayment(m);
+  };
+
   const maxPeriods = loan.termMonths * 3 + 12;
   for (let index = 1; index <= maxPeriods && !closed; index++) {
     const periodEnd = paymentDate(loan, index);
@@ -210,7 +216,7 @@ export function buildSchedule(loan: LoanInput, prepayments: readonly PrepaymentI
       balance -= p.amountKop;
       totalPrepaid += p.amountKop;
       rows.push(row('prepayment', index, p.date, 0, 0, 0, p.amountKop, 0, balance, rateAt(timeline, p.date), [p.id]));
-      recalcAfterPrepayment(p.mode);
+      applyPrepayment(p.mode);
     }
     if (closed) break;
 
@@ -286,7 +292,7 @@ export function buildSchedule(loan: LoanInput, prepayments: readonly PrepaymentI
       balance -= amt;
       prepaidToday += amt;
       ids.push(p.id);
-      recalcAfterPrepayment(p.mode);
+      applyPrepayment(p.mode);
     }
     if (keepTarget !== null && balance > 0 && remaining > 0) {
       const extra = Math.min(Math.max(0, keepTarget - due), balance);
