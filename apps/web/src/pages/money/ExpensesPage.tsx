@@ -7,7 +7,7 @@ import { api } from '../../api/client.js';
 import { useHh, useHhMutation } from '../../api/household.js';
 import type { ExpenseDto, LoanDto, StageDto } from '../../api/types.js';
 import { Term } from '../../components/learning.js';
-import { Badge, Button, Card, ConfirmButton, DateText, Empty, ErrorBox, Field, Input, Modal, Money, MoneyInput, PageHeader, Segmented, Select, Spinner, Switch } from '../../components/ui/index.js';
+import { Badge, Button, Card, ConfirmButton, DateInput, DateText, Empty, ErrorBox, Field, Input, Modal, Money, MoneyInput, PageHeader, Segmented, Select, Spinner, Switch } from '../../components/ui/index.js';
 import { Tabs } from '../../layout/AppLayout.js';
 import { MONEY_TABS } from './IncomesPage.js';
 
@@ -220,7 +220,7 @@ function ExpenseModal({ value, onClose }: { value: Partial<ExpenseDto>; onClose(
             <MoneyInput id="ex-fact" value={v.factKop ?? null} onChange={(k) => set('factKop', k)} />
           </Field>
           <Field label="Дата" htmlFor="ex-date">
-            <Input id="ex-date" type="date" disabled={v.atKeys} value={v.date ?? ''} onChange={(e) => set('date', e.target.value || null)} />
+            <DateInput id="ex-date" disabled={v.atKeys} value={v.date ?? ''} onChange={(e) => set('date', e.target.value || null)} />
           </Field>
           <Field label="Этап" htmlFor="ex-stage">
             <Select id="ex-stage" value={v.stageId ?? ''} onChange={(e) => set('stageId', e.target.value || null)}>

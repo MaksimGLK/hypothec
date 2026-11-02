@@ -380,6 +380,7 @@ export const prepayments = pgTable('prepayments', {
   date: day('date'),
   startDate: day('start_date'),
   endDate: day('end_date'),
+  dayOfMonth: integer('day_of_month'),
   mode: text('mode').notNull(),
   source: text('source').notNull().default('manual'),
   /** planned — впереди; done — дата наступила, сумма списана со счёта «Досрочка»; skipped — не вносили. */

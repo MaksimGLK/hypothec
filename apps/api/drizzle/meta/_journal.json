@@ -43,6 +43,13 @@
       "when": 1791737058049,
       "tag": "0005_statement_import",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793647567226,
+      "tag": "0006_prepayment_day",
+      "breakpoints": true
     }
   ]
 }

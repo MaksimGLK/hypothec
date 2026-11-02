@@ -127,8 +127,30 @@ export function buildSchedule(loan: LoanInput, prepayments: readonly PrepaymentI
     }
     oneOffs.push({ id: p.id, date: p.date, amountKop: p.amountKop, mode: p.mode });
   }
+  const ownDay = (p: PrepaymentInput) => (p.kind === 'monthly' && !rules?.onlyOnPaymentDate && p.dayOfMonth && p.dayOfMonth !== (loan.paymentDay ?? parseDate(loan.issueDate).d) ? p.dayOfMonth : null);
+  // ежемесячная доплата в своё число считается как серия разовых: проценты уменьшаются с даты внесения
+  for (const p of own) {
+    const day = ownDay(p);
+    if (!day) continue;
+    if (rules && rules.minAmountKop > 0 && p.amountKop < rules.minAmountKop) {
+      warnings.push({
+        code: 'below_minimum',
+        date: p.startDate ?? loan.issueDate,
+        prepaymentId: p.id,
+        message: `Банк принимает досрочку от ${formatRub(rules.minAmountKop)}. Ежемесячная доплата ${formatRub(p.amountKop)} не учтена.`,
+      });
+      continue;
+    }
+    const start = p.startDate ?? loan.issueDate;
+    const last = paymentDate(loan, loan.termMonths * 3 + 12);
+    for (let k = 0; ; k++) {
+      const date = addMonths(start, k, day);
+      if (date > last || (p.endDate && date > p.endDate)) break;
+      if (date >= start && date > loan.issueDate) oneOffs.push({ id: p.id, date, amountKop: p.amountKop, mode: p.mode });
+    }
+  }
   oneOffs.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-  const monthly = own.filter((p) => p.kind === 'monthly');
+  const monthly = own.filter((p) => p.kind === 'monthly' && !ownDay(p));
 
   let balance = loan.principalKop;
   let remaining = loan.termMonths;

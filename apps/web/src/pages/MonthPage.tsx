@@ -9,7 +9,7 @@ import { DistributionCard } from '../components/distribution.js';
 import { PendingPrepayments } from '../components/pending-prepayments.js';
 import { DateCell, DayCell, FactCell, MoneyCell, TextCell } from '../components/inline.js';
 import { Term } from '../components/learning.js';
-import { Badge, Button, Card, cx, Input, Money, MoneyInput, Segmented, Spinner } from '../components/ui/index.js';
+import { Badge, Button, Card, cx, DateInput, Input, Money, MoneyInput, Segmented, Spinner } from '../components/ui/index.js';
 import { useToast } from '../components/ui/toast.js';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -194,7 +194,7 @@ function Incomes({ month, onMonth }: { month: string; onMonth(month: string): vo
       <form className={cx('mt-2 grid gap-2', kind === 'once' ? 'grid-cols-[150px_1fr_auto] sm:grid-cols-[1fr_150px_120px_auto]' : 'grid-cols-[64px_1fr_auto] sm:grid-cols-[1fr_64px_120px_auto]')} onSubmit={submit}>
         <Input aria-label="Новый доход: название" placeholder={kind === 'once' ? 'Например, Продажа машины' : 'Например, Зарплата Максим'} className="col-span-3 h-9 sm:col-span-1" value={name} onChange={(e) => setName(e.target.value)} />
         {kind === 'once' ? (
-          <Input aria-label="Новый доход: дата" type="date" className="h-9" value={onceDate} onChange={(e) => setDate(e.target.value)} />
+          <DateInput aria-label="Новый доход: дата" className="h-9" value={onceDate} onChange={(e) => setDate(e.target.value)} />
         ) : (
           <Input aria-label="Новый доход: день" placeholder="день" inputMode="numeric" className="h-9 text-center" value={day} onChange={(e) => setDay(e.target.value.replace(/\D/g, '').slice(0, 2))} />
         )}

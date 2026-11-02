@@ -81,16 +81,19 @@ test('семья проходит путь: регистрация → маст�
   await page.getByRole('button', { name: 'Добавить доход' }).click();
   await expect(page.getByText('Доход добавлен')).toBeVisible();
   // разовый доход: с датой, виден только в своём месяце
-  const ym = new Date().toISOString().slice(0, 7);
+  const [y, m] = new Date().toISOString().slice(0, 7).split('-');
   await page.getByRole('radio', { name: 'Разовый' }).click();
   await page.getByLabel('Новый доход: название').fill('Продажа машины');
-  await page.getByLabel('Новый доход: дата').fill(`${ym}-27`);
+  await page.getByLabel('Новый доход: дата').fill(`27/${m}/${y}`);
   await page.getByLabel('Новый доход: сумма').fill('200000');
   await page.getByRole('button', { name: 'Добавить доход' }).click();
   await expect(page.getByRole('button', { name: 'Дата поступления: изменить' })).toContainText('27');
   await expect(page.getByText('Разово в этом месяце')).toBeVisible();
   await page.getByRole('button', { name: 'Дата поступления: изменить' }).click();
-  await page.getByLabel('Дата поступления', { exact: true }).fill(`${ym}-28`);
+  // дата всегда дд/мм/гггг, несуществующая не принимается
+  await page.getByLabel('Дата поступления', { exact: true }).fill(`31/02/${y}`);
+  await expect(page.getByLabel('Дата поступления', { exact: true })).toHaveValue(`31/02/${y}`);
+  await page.getByLabel('Дата поступления', { exact: true }).fill(`28/${m}/${y}`);
   await page.getByLabel('Дата поступления', { exact: true }).press('Enter');
   await expect(page.getByRole('button', { name: 'Дата поступления: изменить' })).toContainText('28');
   await page.getByRole('button', { name: 'Следующий месяц' }).click();
@@ -148,7 +151,7 @@ test('семья проходит путь: регистрация → маст�
   await expect(page.getByText('Доход добавлен')).toBeVisible();
   await page.getByLabel('Доход одной строкой').fill('Премия 300 000 раз в квартал');
   await page.getByRole('button', { name: 'Разобрать' }).click();
-  await page.getByRole('dialog').getByLabel('Дата первого поступления').fill('2026-12-20');
+  await page.getByRole('dialog').getByLabel('Дата первого поступления').fill('20/12/2026');
   await page.getByRole('dialog').getByRole('button', { name: 'Сохранить' }).click();
   await expect(page.getByText('Премия').first()).toBeVisible();
   await page.screenshot({ path: shots('04-incomes'), fullPage: true });
@@ -210,6 +213,14 @@ test('семья проходит путь: регистрация → маст�
   await expect(page.getByText(/в срок по договору —/).first()).toBeVisible();
   await page.getByRole('button', { name: /В сценарий «Основной план»/ }).first().click();
   await expect(page.getByText('Добавлено в сценарий')).toBeVisible();
+  // ежемесячная досрочка в своё число
+  await page.getByLabel('Как платить').first().selectOption('monthly');
+  await page.getByLabel('Какого числа').fill('5');
+  await page.getByLabel('Сумма в месяц').fill('20000');
+  await page.getByRole('button', { name: /В сценарий «Основной план»/ }).first().click();
+  await expect(page.getByText('каждый месяц, 5-го')).toBeVisible();
+  await page.getByRole('button', { name: 'Удалить досрочку' }).last().click();
+  await expect(page.getByText('каждый месяц, 5-го')).toHaveCount(0);
   await page.screenshot({ path: shots('08-prepayment'), fullPage: true });
 
   // кредит и график

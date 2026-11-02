@@ -1,6 +1,6 @@
 import { formatDateRu, formatRub } from '@hypothec/core';
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
-import { cx, parseRubles } from './ui/index.js';
+import { cx, DateInput, parseRubles } from './ui/index.js';
 
 /**
  * Ячейка «как в таблице»: показывает значение, по нажатию превращается в поле, Enter или уход с поля — сохранить, Esc — отменить.
@@ -91,12 +91,12 @@ export function DateCell({ value, onSave, label }: { value: string | null | unde
   );
   if (c.editing) {
     return (
-      <input
+      <DateInput
         ref={c.ref}
         autoFocus
-        type="date"
+        picker={false}
         aria-label={label}
-        className="h-8 w-36 rounded-lg border border-primary bg-surface px-2 focus:outline-none"
+        className="h-8 w-32 rounded-lg border border-primary bg-surface px-2 focus:outline-none"
         value={c.text}
         onChange={(e) => c.setText(e.target.value)}
         onBlur={c.commit}

@@ -316,6 +316,8 @@ const PrepaymentFields = z
     date: IsoDate.optional(),
     startDate: IsoDate.optional(),
     endDate: IsoDate.optional(),
+    /** Ежемесячная досрочка: какого числа вносить; не задано — в дату платежа. */
+    dayOfMonth: z.number().int().min(1).max(31).optional(),
     mode: PrepaymentMode,
     source: z.enum(['manual', 'tax_refund', 'recommendation']).default('manual'),
   });

@@ -81,6 +81,38 @@ describe('дифференцированный платёж', () => {
   });
 });
 
+describe('ежемесячная досрочка в своё число', () => {
+  const monthly = (over: Partial<PrepaymentInput> = {}): PrepaymentInput => ({ id: 'm', loanId: REFERENCE_LOAN.id, kind: 'monthly', amountKop: rub(50_000), startDate: '2026-02-01', mode: 'reduce_term', ...over });
+
+  it('считается как те же разовые досрочки в эти даты', () => {
+    const byDay = buildSchedule(REFERENCE_LOAN, [monthly({ dayOfMonth: 5, endDate: '2026-07-31' })]);
+    const dates = ['2026-02-05', '2026-03-05', '2026-04-05', '2026-05-05', '2026-06-05', '2026-07-05'];
+    const manual = buildSchedule(REFERENCE_LOAN, dates.map((d) => ({ ...oneOff(d, 50_000, 'reduce_term', 'm') })));
+    expect(byDay.summary.totalInterestKop).toBe(manual.summary.totalInterestKop);
+    expect(byDay.summary.totalPrepaidKop).toBe(rub(300_000));
+    expectConsistent(REFERENCE_LOAN, byDay);
+  });
+
+  it('чем раньше деньги уменьшают долг, тем меньше процентов (проценты по дням)', () => {
+    const daily: LoanInput = { ...REFERENCE_LOAN, interestMode: 'daily' };
+    const at = (dayOfMonth: number) => buildSchedule(daily, [monthly({ dayOfMonth })]);
+    expect(at(5).summary.totalInterestKop).toBeLessThan(at(25).summary.totalInterestKop);
+    expectConsistent(daily, at(5));
+  });
+
+  it('число платежа и банк «только в дату платежа» — как обычная ежемесячная доплата', () => {
+    const plain = buildSchedule(REFERENCE_LOAN, [monthly()]);
+    expect(buildSchedule(REFERENCE_LOAN, [monthly({ dayOfMonth: 15 })]).rows).toEqual(plain.rows);
+    const strict: LoanInput = { ...REFERENCE_LOAN, bankRules: { onlyOnPaymentDate: true, minAmountKop: 0, noticeDays: 0 } };
+    expect(buildSchedule(strict, [monthly({ dayOfMonth: 5 })]).rows).toEqual(buildSchedule(strict, [monthly()]).rows);
+  });
+
+  it('31-е в коротком месяце — последний день месяца; до начала и после конца не вносится', () => {
+    const s = buildSchedule(REFERENCE_LOAN, [monthly({ dayOfMonth: 31, startDate: '2026-02-10', endDate: '2026-03-31' })]);
+    expect(s.rows.filter((r) => r.kind === 'prepayment').map((r) => r.date)).toEqual(['2026-02-28', '2026-03-31']);
+  });
+});
+
 describe('новая досрочка поверх уже запланированных', () => {
   const existing = [oneOff('2026-01-15', 50_000, 'reduce_payment_keep_amount', 'old')];
   const candidate = (amountRub: number) => oneOff('2026-06-15', amountRub, 'reduce_term', 'new');

@@ -7,7 +7,7 @@ import { api, ApiError } from '../api/client.js';
 import { useHh, useHousehold } from '../api/household.js';
 import type { ScenarioDto } from '../api/types.js';
 import { Term } from '../components/learning.js';
-import { Button, Card, cx, Field, Input, MoneyInput, Select, Switch } from '../components/ui/index.js';
+import { Button, Card, cx, DateInput, Field, Input, MoneyInput, Select, Switch } from '../components/ui/index.js';
 
 type Housing = 'new_ddu' | 'secondary' | 'house';
 type Program = 'family' | 'base' | 'it' | 'other';
@@ -298,7 +298,7 @@ export default function WizardPage() {
         <section className="space-y-4">
           <h1 className="text-2xl font-semibold">Когда начинаете?</h1>
           <Field label="Дата начала" htmlFor="start" hint="От неё рассчитаем плановые даты этапов. Их можно будет поправить.">
-            <Input id="start" type="date" value={a.startDate} onChange={(e) => set('startDate', e.target.value)} />
+            <DateInput id="start" value={a.startDate} onChange={(e) => set('startDate', e.target.value)} />
           </Field>
           <Card>
             <dl className="grid grid-cols-2 gap-y-2 text-sm">

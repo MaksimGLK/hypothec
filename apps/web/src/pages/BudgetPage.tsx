@@ -6,7 +6,7 @@ import { useAuth } from '../api/auth.js';
 import { useHh, useHhMutation } from '../api/household.js';
 import type { LivingDto } from '../api/types.js';
 import { Term } from '../components/learning.js';
-import { Badge, Button, Card, ConfirmButton, cx, Empty, ErrorBox, Field, Input, Modal, Money, MoneyInput, PageHeader, Progress, Select, Spinner, Switch } from '../components/ui/index.js';
+import { Badge, Button, Card, ConfirmButton, cx, DateInput, Empty, ErrorBox, Field, Input, Modal, Money, MoneyInput, PageHeader, Progress, Select, Spinner, Switch } from '../components/ui/index.js';
 import { useToast } from '../components/ui/toast.js';
 import { Tabs } from '../layout/AppLayout.js';
 import { DistributionCard } from '../components/distribution.js';
@@ -276,7 +276,7 @@ function QuickAdd({ categories, month, isCurrent }: { categories: LivingDto[]; m
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Дата" htmlFor="sp-date">
-                <Input id="sp-date" type="date" value={manual.date} onChange={(e) => setManual({ ...manual, date: e.target.value })} />
+                <DateInput id="sp-date" value={manual.date} onChange={(e) => setManual({ ...manual, date: e.target.value })} />
               </Field>
               <Field label="Комментарий" htmlFor="sp-note">
                 <Input id="sp-note" value={manual.note} onChange={(e) => setManual({ ...manual, note: e.target.value })} />

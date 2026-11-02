@@ -1,7 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { formatDateRu, formatRub, rub } from '@hypothec/core';
-import { Loader2, X } from 'lucide-react';
-import { type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, forwardRef, useEffect, useId, useState } from 'react';
+import { formatDateNum, formatDateRu, formatRub, rub } from '@hypothec/core';
+import { CalendarDays, Loader2, X } from 'lucide-react';
+import { type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, forwardRef, useEffect, useId, useRef, useState } from 'react';
 
 const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(' ');
 export { cx };
@@ -85,6 +85,109 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   <input ref={ref} className={cx(inputCls, className)} {...rest} />
 ));
 Input.displayName = 'Input';
+
+/** Что набрано в поле → дата ISO; null — набрано не до конца или такой даты нет. */
+function parseDateText(text: string): string | null {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(text);
+  if (!m) return null;
+  const [d, mon, y] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const dt = new Date(Date.UTC(y, mon - 1, d));
+  if (y < 1900 || dt.getUTCMonth() !== mon - 1 || dt.getUTCDate() !== d) return null;
+  return `${m[3]}-${m[2]}-${m[1]}`;
+}
+
+/** Цифры → дд/мм/гггг; вставленные 2026-11-18 и 18.11.2026 тоже понимаем. */
+function maskDateText(raw: string): string {
+  const iso = /^\s*(\d{4})-(\d{2})-(\d{2})\s*$/.exec(raw);
+  if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+  const digits = raw.replace(/\D/g, '').slice(0, 8);
+  return [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4)].filter(Boolean).join('/');
+}
+
+type DateInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'value' | 'onChange'> & {
+  /** Дата ISO (2026-11-18) или пустая строка. */
+  value: string;
+  /** Срабатывает, только когда дата набрана целиком или поле очищено. */
+  onChange(e: { target: { value: string } }): void;
+  /** Кнопка календаря. Без неё поле занимает меньше места. */
+  picker?: boolean;
+};
+
+/**
+ * Дата всегда в виде дд/мм/гггг. Встроенное поле браузера показывает формат по языку системы,
+ * поэтому видимое поле — текстовое, а календарь открывается у скрытого встроенного.
+ */
+export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(({ value, onChange, picker = true, className, onBlur, disabled, ...rest }, ref) => {
+  const shown = value ? formatDateNum(value) : '';
+  const [text, setText] = useState(shown);
+  const native = useRef<HTMLInputElement>(null);
+  const invalid = text !== '' && parseDateText(text) === null;
+  useEffect(() => {
+    // набор не сбрасываем: пока дата неполная, value остаётся прежним и эффект не срабатывает
+    setText((t) => (parseDateText(t) === (value || null) ? t : shown));
+  }, [value, shown]);
+  return (
+    <span className="relative block">
+      <input
+        ref={(el) => {
+          if (el) el.setCustomValidity(invalid ? 'Введите дату: дд/мм/гггг' : '');
+          if (typeof ref === 'function') ref(el);
+          else if (ref) ref.current = el;
+        }}
+        {...rest}
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        placeholder="дд/мм/гггг"
+        disabled={disabled}
+        value={text}
+        className={cx(inputCls, 'num', picker && 'pr-10', className)}
+        onChange={(e) => {
+          const next = maskDateText(e.target.value);
+          setText(next);
+          const iso = parseDateText(next);
+          if (iso !== null) onChange({ target: { value: iso } });
+          else if (next === '') onChange({ target: { value: '' } });
+        }}
+        onBlur={(e) => {
+          // недонабранное не оставляем: на экране должна быть дата, которая реально сохранена
+          if (invalid) setText(shown);
+          onBlur?.(e);
+        }}
+      />
+      {picker && (
+        <>
+          <input
+            ref={native}
+            type="date"
+            tabIndex={-1}
+            aria-hidden
+            disabled={disabled}
+            value={value}
+            className="pointer-events-none absolute right-0 bottom-0 h-px w-px opacity-0"
+            onChange={(e) => onChange({ target: { value: e.target.value } })}
+          />
+          <button
+            type="button"
+            aria-label="Открыть календарь"
+            disabled={disabled}
+            className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-muted hover:text-ink disabled:opacity-50"
+            onClick={() => {
+              try {
+                native.current?.showPicker();
+              } catch {
+                native.current?.focus();
+              }
+            }}
+          >
+            <CalendarDays className="size-4" aria-hidden />
+          </button>
+        </>
+      )}
+    </span>
+  );
+});
+DateInput.displayName = 'DateInput';
 
 export function Select({ className, children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (

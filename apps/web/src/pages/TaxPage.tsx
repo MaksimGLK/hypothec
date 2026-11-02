@@ -4,7 +4,7 @@ import { api } from '../api/client.js';
 import { useHh, useHhMutation, useHousehold } from '../api/household.js';
 import type { LoanDto, MemberDto, PrepaymentScenarioDto, ScenarioDto, TaxMemberDto, TaxResult } from '../api/types.js';
 import { LessonsFor, Term } from '../components/learning.js';
-import { Badge, Button, Card, DateText, ErrorBox, Field, Input, Money, MoneyInput, PageHeader, Select, Spinner, Switch } from '../components/ui/index.js';
+import { Badge, Button, Card, DateInput, DateText, ErrorBox, Field, Input, Money, MoneyInput, PageHeader, Select, Spinner, Switch } from '../components/ui/index.js';
 import { useToast } from '../components/ui/toast.js';
 
 export default function TaxPage() {
@@ -107,7 +107,7 @@ export default function TaxPage() {
         <p className="mb-3 text-sm text-ink-2">После регистрации собственности; для новостройки — после акта приёма-передачи. Если не указать, берём дату ключей.</p>
         <div className="max-w-xs">
           <Field label="Дата" htmlFor="right-date" hint={scenario.data?.keysDate ? <>Дата ключей: <DateText date={scenario.data.keysDate} /></> : undefined}>
-            <Input id="right-date" type="date" value={scenario.data?.rightDate ?? ''} onChange={(e) => scenario.data && saveScenario.mutate({ rightDate: e.target.value || null, version: scenario.data.version })} />
+            <DateInput id="right-date" value={scenario.data?.rightDate ?? ''} onChange={(e) => scenario.data && saveScenario.mutate({ rightDate: e.target.value || null, version: scenario.data.version })} />
           </Field>
         </div>
       </Card>

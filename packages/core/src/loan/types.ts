@@ -60,6 +60,8 @@ export interface PrepaymentInput {
   /** Для ежемесячной доплаты: применяется в каждую дату платежа в интервале [startDate, endDate]. */
   startDate?: IsoDate;
   endDate?: IsoDate;
+  /** Для ежемесячной доплаты: какого числа вносить. Не задано — в дату платежа. */
+  dayOfMonth?: number;
   mode: PrepaymentMode;
   source?: 'manual' | 'tax_refund' | 'recommendation';
 }

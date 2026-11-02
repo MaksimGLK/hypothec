@@ -131,6 +131,12 @@ export function formatDateRu(date: IsoDate, opts: { year?: boolean } = {}): stri
   return `${d} ${MONTHS_GEN[m - 1]}${opts.year === false ? '' : ` ${y}`}`;
 }
 
+/** Единый числовой формат для людей: 18/11/2026. */
+export function formatDateNum(date: IsoDate): string {
+  const { y, m, d } = parseDate(date);
+  return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
+}
+
 const MONTHS_NOM = [
   'январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
   'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь',

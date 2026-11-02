@@ -1,10 +1,10 @@
-import { INCOME_TYPE_LABELS, monthlyEquivalent, type IncomeInput } from '@hypothec/core';
+import { INCOME_TYPE_LABELS, monthlyEquivalent, type IncomeInput, formatDateNum } from '@hypothec/core';
 import { Pencil, Sparkles, Trash2 } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { useHh, useHhMutation } from '../../api/household.js';
 import type { IncomeDraft, IncomeDto, MemberDto } from '../../api/types.js';
 import { Term } from '../../components/learning.js';
-import { Badge, Button, Card, ConfirmButton, Empty, ErrorBox, Field, Input, Modal, Money, MoneyInput, PageHeader, Segmented, Select, Spinner, Switch } from '../../components/ui/index.js';
+import { Badge, Button, Card, ConfirmButton, DateInput, Empty, ErrorBox, Field, Input, Modal, Money, MoneyInput, PageHeader, Segmented, Select, Spinner, Switch } from '../../components/ui/index.js';
 import { Tabs } from '../../layout/AppLayout.js';
 
 export const MONEY_TABS = [
@@ -36,8 +36,8 @@ type FormValue = Omit<IncomeInput, 'id'> & { id?: string; version?: number };
 
 function describe(i: Pick<IncomeDto, 'periodicity' | 'dayOfMonth' | 'date'>) {
   if (i.periodicity === 'monthly') return `${PERIOD_LABEL.monthly}${i.dayOfMonth ? `, ${i.dayOfMonth}-го` : ''}`;
-  if (i.periodicity === 'once') return i.date ? `разово, ${new Date(i.date).toLocaleDateString('ru-RU')}` : 'разово';
-  return `${PERIOD_LABEL[i.periodicity]}${i.date ? `, с ${new Date(i.date).toLocaleDateString('ru-RU')}` : ''}`;
+  if (i.periodicity === 'once') return i.date ? `разово, ${formatDateNum(i.date)}` : 'разово';
+  return `${PERIOD_LABEL[i.periodicity]}${i.date ? `, с ${formatDateNum(i.date)}` : ''}`;
 }
 
 export default function IncomesPage() {
@@ -137,8 +137,8 @@ function IncomeRow({ income, onEdit }: { income: IncomeDto; onEdit(): void }) {
         <p className="mt-0.5 text-xs text-ink-2">
           {describe(income)} · <Badge tone={r.tone}>{r.label}</Badge>
           {income.startsAtKeys && ' · после переезда'}
-          {income.startDate && !income.startsAtKeys && ` · с ${new Date(income.startDate).toLocaleDateString('ru-RU')}`}
-          {income.endDate && ` · до ${new Date(income.endDate).toLocaleDateString('ru-RU')}`}
+          {income.startDate && !income.startsAtKeys && ` · с ${formatDateNum(income.startDate)}`}
+          {income.endDate && ` · до ${formatDateNum(income.endDate)}`}
         </p>
       </div>
       <Money kop={income.amountKop} className="font-medium" />
@@ -219,7 +219,7 @@ function IncomeModal({ value, recognized, onClose, onSaved }: { value: FormValue
             </Field>
           ) : (
             <Field label={v.periodicity === 'once' ? 'Дата поступления' : 'Дата первого поступления'} htmlFor="inc-date" error={err?.field('date')}>
-              <Input id="inc-date" type="date" value={v.date ?? ''} onChange={(e) => set('date', e.target.value || undefined)} />
+              <DateInput id="inc-date" value={v.date ?? ''} onChange={(e) => set('date', e.target.value || undefined)} />
             </Field>
           )}
           {(members.data?.length ?? 0) > 1 && (
@@ -255,10 +255,10 @@ function IncomeModal({ value, recognized, onClose, onSaved }: { value: FormValue
             <Switch checked={v.endsAtKeys ?? false} onChange={(c) => set('endsAtKeys', c)} label="Закончится после переезда" />
             <div className="grid gap-3 pt-1 sm:grid-cols-2">
               <Field label="Начало" htmlFor="inc-start">
-                <Input id="inc-start" type="date" value={v.startDate ?? ''} onChange={(e) => set('startDate', e.target.value || undefined)} />
+                <DateInput id="inc-start" value={v.startDate ?? ''} onChange={(e) => set('startDate', e.target.value || undefined)} />
               </Field>
               <Field label="Окончание" htmlFor="inc-end" error={err?.field('endDate')}>
-                <Input id="inc-end" type="date" value={v.endDate ?? ''} onChange={(e) => set('endDate', e.target.value || undefined)} />
+                <DateInput id="inc-end" value={v.endDate ?? ''} onChange={(e) => set('endDate', e.target.value || undefined)} />
               </Field>
             </div>
           </div>
