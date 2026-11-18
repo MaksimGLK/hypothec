@@ -131,6 +131,8 @@ const LivingFields = z.object({
   essential: z.boolean().optional(),
   group: z.string().max(32).nullable().optional(),
   catalogKey: z.string().max(64).nullable().optional(),
+  /** Чья категория (участник семьи); null — общая. */
+  memberId: Id.nullable().optional(),
   sort: z.number().int().optional(),
   autoPayDay: z.number().int().min(1).max(31).nullable().optional(),
   startDate: IsoDate.nullable().optional(),
@@ -184,6 +186,8 @@ export const ImportPreviewRequest = z.object({
   /** Таблица выписки: строки CSV или листа Excel (даты из Excel — строкой ГГГГ-ММ-ДД). */
   rows: z.array(z.array(Cell).max(60)).min(1).max(5000),
   manual: z.object({ headerRow: z.number().int().min(0), mapping: StatementMapping }).optional(),
+  /** Банк, если клиент узнал его сам (по шапке PDF), — в таблице из PDF характерных колонок нет. */
+  bank: z.enum(['tbank', 'vtb', 'alfa', 'unknown']).optional(),
 });
 export const ImportCommitRequest = z.object({
   items: z

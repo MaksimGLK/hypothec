@@ -4,9 +4,9 @@ import { type FormEvent, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { useAuth } from '../api/auth.js';
 import { useHh, useHhMutation } from '../api/household.js';
-import type { LivingDto } from '../api/types.js';
+import type { LivingDto, MemberDto } from '../api/types.js';
 import { Term } from '../components/learning.js';
-import { Badge, Button, Card, ConfirmButton, cx, DateInput, Empty, ErrorBox, Field, Input, Modal, Money, MoneyInput, PageHeader, Progress, Select, Spinner, Switch } from '../components/ui/index.js';
+import { Badge, Button, Card, ConfirmButton, cx, DateInput, Empty, ErrorBox, Field, Input, Modal, Money, MoneyInput, PageHeader, Progress, Segmented, Select, Spinner, Switch } from '../components/ui/index.js';
 import { useToast } from '../components/ui/toast.js';
 import { Tabs } from '../layout/AppLayout.js';
 import { DistributionCard } from '../components/distribution.js';
@@ -25,6 +25,8 @@ type Summary = BudgetMonth & { averages: Record<string, { averageKop: number; mo
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+const memberLabel = (m: MemberDto) => m.displayName || m.name;
+
 export default function BudgetPage() {
   const [month, setMonth] = useState(() => today().slice(0, 7));
   const cats = useHh<LivingDto[]>('/living-expenses');
@@ -33,6 +35,8 @@ export default function BudgetPage() {
   const bootstrap = useHhMutation<Record<string, never>>('POST', '/budget/bootstrap', { success: 'Категории добавлены — впишите, сколько примерно уходит в месяц' });
   const [edit, setEdit] = useState<Partial<LivingDto> | null>(null);
   const [adding, setAdding] = useState(false);
+  const members = useHh<MemberDto[]>('/members');
+  const [who, setWho] = useState<string>('all');
   const isCurrent = month === today().slice(0, 7);
 
   if (cats.isLoading) return <Spinner />;
@@ -42,8 +46,30 @@ export default function BudgetPage() {
   const catName = (id: string | null) => list.find((c) => c.id === id)?.name ?? 'Без категории';
   // в основном списке — категории с планом или тратами; пустые свёрнуты, чтобы не мешали
   const hasActivity = (c: LivingDto) => c.amountKop > 0 || (s?.categories.find((r) => r.categoryId === c.id)?.factKop ?? 0) > 0;
-  const withPlan = list.filter(hasActivity);
-  const withoutPlan = list.filter((c) => !hasActivity(c));
+  // категории по людям: общие и закреплённые за участником семьи
+  const people = members.data ?? [];
+  const showPeople = people.length > 1 || list.some((c) => c.memberId);
+  const personName = (id: string | null | undefined) => {
+    const m = id ? people.find((x) => x.id === id) : undefined;
+    return m ? memberLabel(m) : null;
+  };
+  const matchesWho = (c: LivingDto) => who === 'all' || (who === 'shared' ? !c.memberId : c.memberId === who);
+  const shown = list.filter(matchesWho);
+  const withPlan = shown.filter(hasActivity);
+  const withoutPlan = shown.filter((c) => !hasActivity(c));
+  const totalOf = (cs: LivingDto[]) =>
+    cs.reduce(
+      (acc, c) => {
+        const r = s?.categories.find((x) => x.categoryId === c.id);
+        return { plan: acc.plan + (r?.planKop ?? c.amountKop), fact: acc.fact + (r?.factKop ?? 0) };
+      },
+      { plan: 0, fact: 0 },
+    );
+  const whoOptions = [
+    { value: 'all', label: 'Все' },
+    { value: 'shared', label: 'Общие' },
+    ...people.map((m) => ({ value: m.id, label: memberLabel(m) })),
+  ];
 
   return (
     <div>
@@ -98,9 +124,31 @@ export default function BudgetPage() {
                 </Button>
               </div>
             </div>
-            <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
+            {showPeople && (
+              <div className="mb-3 space-y-2">
+                <Segmented label="Чьи категории" value={who} onChange={setWho} options={whoOptions} />
+                {who !== 'all' && (
+                  <p className="text-sm text-ink-2">
+                    Потрачено <Money kop={totalOf(shown).fact} className="font-medium text-ink" /> из <Money kop={totalOf(shown).plan} /> по плану
+                  </p>
+                )}
+                {who === 'all' && (
+                  <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-2" aria-label="Потрачено по людям">
+                    {[{ id: 'shared', label: 'Общие', cs: list.filter((c) => !c.memberId) }, ...people.map((m) => ({ id: m.id, label: memberLabel(m), cs: list.filter((c) => c.memberId === m.id) }))]
+                      .filter((g) => g.cs.length > 0)
+                      .map((g) => (
+                        <li key={g.id}>
+                          {g.label}: <Money kop={totalOf(g.cs).fact} className="font-medium text-ink" /> из <Money kop={totalOf(g.cs).plan} />
+                        </li>
+                      ))}
+                  </ul>
+                )}
+              </div>
+            )}
+            {shown.length === 0 && <p className="mb-2 text-sm text-ink-2">Здесь пока нет категорий. Откройте категорию и выберите, чья она.</p>}
+            <ul className={cx('divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface', withPlan.length === 0 && 'hidden')}>
               {withPlan.map((c) => (
-                <CategoryRow key={c.id} cat={c} row={s?.categories.find((r) => r.categoryId === c.id)} avg={s?.averages[c.id]} onEdit={() => setEdit(c)} isCurrentMonth={isCurrent} />
+                <CategoryRow key={c.id} cat={c} person={showPeople ? personName(c.memberId) : null} row={s?.categories.find((r) => r.categoryId === c.id)} avg={s?.averages[c.id]} onEdit={() => setEdit(c)} isCurrentMonth={isCurrent} />
               ))}
             </ul>
             {withoutPlan.length > 0 && (
@@ -110,7 +158,7 @@ export default function BudgetPage() {
                 </summary>
                 <ul className="divide-y divide-border border-t border-border">
                   {withoutPlan.map((c) => (
-                    <CategoryRow key={c.id} cat={c} row={s?.categories.find((r) => r.categoryId === c.id)} avg={s?.averages[c.id]} onEdit={() => setEdit(c)} isCurrentMonth={isCurrent} />
+                    <CategoryRow key={c.id} cat={c} person={showPeople ? personName(c.memberId) : null} row={s?.categories.find((r) => r.categoryId === c.id)} avg={s?.averages[c.id]} onEdit={() => setEdit(c)} isCurrentMonth={isCurrent} />
                   ))}
                 </ul>
               </details>
@@ -133,8 +181,8 @@ export default function BudgetPage() {
         </div>
       )}
 
-      {edit && <CategoryModal value={edit} onClose={() => setEdit(null)} />}
-      {adding && <AddCategoryModal existing={list} onClose={() => setAdding(false)} onCustom={() => (setAdding(false), setEdit({ name: '', amountKop: 0, essential: true }))} />}
+      {edit && <CategoryModal value={edit} members={people} onClose={() => setEdit(null)} />}
+      {adding && <AddCategoryModal existing={list} onClose={() => setAdding(false)} onCustom={() => (setAdding(false), setEdit({ name: '', amountKop: 0, essential: true, memberId: who !== 'all' && who !== 'shared' ? who : null }))} />}
     </div>
   );
 }
@@ -298,7 +346,7 @@ function QuickAdd({ categories, month, isCurrent }: { categories: LivingDto[]; m
 const BILL_KEYS = new Set(['utilities', 'rent', 'mobile', 'kids_activities', 'kids_school', 'subscriptions']);
 const isBill = (c: LivingDto) => Boolean(c.autoPayDay) || !c.catalogKey || BILL_KEYS.has(c.catalogKey);
 
-function CategoryRow({ cat, row, avg, onEdit, isCurrentMonth }: { cat: LivingDto; row: BudgetMonth['categories'][number] | undefined; avg: { averageKop: number; months: number } | undefined; onEdit(): void; isCurrentMonth: boolean }) {
+function CategoryRow({ cat, person, row, avg, onEdit, isCurrentMonth }: { cat: LivingDto; person: string | null; row: BudgetMonth['categories'][number] | undefined; avg: { averageKop: number; months: number } | undefined; onEdit(): void; isCurrentMonth: boolean }) {
   const { uiMode } = useAuth();
   const setPlan = useHhMutation<{ amountKop: number; version: number }>('PATCH', `/living-expenses/${cat.id}`, { success: 'План обновлён' });
   const pay = useHhMutation<Record<string, unknown>>('POST', '/budget/spendings', { success: `«${cat.name}» — отмечено оплаченным` });
@@ -311,7 +359,7 @@ function CategoryRow({ cat, row, avg, onEdit, isCurrentMonth }: { cat: LivingDto
       <button type="button" onClick={onEdit} className="flex w-full items-start justify-between gap-3 text-left">
         <span className="min-w-0">
           <span className="font-medium">{cat.name}</span>{' '}
-          {cat.essential !== false && <Badge>обязательно</Badge>}
+          {person && <Badge tone="primary">{person}</Badge>} {cat.essential !== false && <Badge>обязательно</Badge>}
           {cat.autoPayDay && <span className="ml-1 text-xs text-muted">автоплатёж {cat.autoPayDay}-го</span>}
           {cat.endsAtKeys && <span className="ml-1 text-xs text-muted">до переезда</span>}
         </span>
@@ -419,7 +467,7 @@ function SpendingRow({ s, catName }: { s: SpendingDto; catName(id: string | null
   );
 }
 
-function CategoryModal({ value, onClose }: { value: Partial<LivingDto>; onClose(): void }) {
+function CategoryModal({ value, members, onClose }: { value: Partial<LivingDto>; members: MemberDto[]; onClose(): void }) {
   const [v, setV] = useState(value);
   const [unit, setUnit] = useState<number | null>(null);
   const [times, setTimes] = useState(0);
@@ -439,6 +487,7 @@ function CategoryModal({ value, onClose }: { value: Partial<LivingDto>; onClose(
               essential: v.essential ?? true,
               endsAtKeys: v.endsAtKeys ?? false,
               autoPayDay: v.autoPayDay ?? null,
+              memberId: v.memberId ?? null,
               ...(isEdit ? { version: value.version } : { group: 'other' }),
             },
             { onSuccess: onClose },
@@ -448,6 +497,18 @@ function CategoryModal({ value, onClose }: { value: Partial<LivingDto>; onClose(
         <Field label="Название" htmlFor="bc-name">
           <Input id="bc-name" required value={v.name ?? ''} onChange={(e) => setV({ ...v, name: e.target.value })} />
         </Field>
+        {(members.length > 1 || v.memberId) && (
+          <Field label="Чья категория" htmlFor="bc-member" hint="Общая — на всю семью. Личная — например, спортзал или обеды на работе.">
+            <Select id="bc-member" value={v.memberId ?? ''} onChange={(e) => setV({ ...v, memberId: e.target.value || null })}>
+              <option value="">Общая</option>
+              {members.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {memberLabel(m)}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
         <Field label="План на месяц" htmlFor="bc-plan" hint="Примерно, сколько уходит в обычный месяц">
           <MoneyInput id="bc-plan" autoFocus value={v.amountKop ?? null} onChange={(k) => setV({ ...v, amountKop: k ?? 0 })} />
         </Field>

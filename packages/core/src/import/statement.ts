@@ -187,11 +187,12 @@ export function classifyOperation(op: Pick<StatementOperation, 'description' | '
 }
 
 /** Разобрать таблицу выписки. mapping можно передать вручную, если столбцы не определились. */
-export function parseStatement(rows: readonly (readonly unknown[])[], manual?: { headerRow: number; mapping: ColumnMapping }): StatementParseResult {
+export function parseStatement(rows: readonly (readonly unknown[])[], manual?: { headerRow: number; mapping: ColumnMapping }, bankHint?: BankId): StatementParseResult {
   const headerRow = manual?.headerRow ?? findHeaderRow(rows);
   const header = headerRow >= 0 ? (rows[headerRow] ?? []).map((c) => String(c ?? '').trim()) : [];
   const mapping = manual?.mapping ?? (headerRow >= 0 ? detectColumns(header) : null);
-  const bank = detectBank(header);
+  const detected = detectBank(header);
+  const bank = detected === 'unknown' && bankHint ? bankHint : detected;
   if (!mapping) return { bank, mapping: null, headerRow, header, operations: [], errors: [{ line: Math.max(1, headerRow + 1), message: 'Не нашли столбцы с датой, суммой и описанием' }] };
 
   const operations: StatementOperation[] = [];
@@ -270,6 +271,34 @@ const BANK_CATEGORY_MAP: { re: RegExp; key: string }[] = [
   { re: /детск/, key: 'kids_other' },
 ];
 
+/**
+ * Получатели латиницей — так их пишут в выписках по картам (особенно в PDF, где нет категории банка и MCC).
+ * Ищутся с начала слова: «LUKOIL AZS 123» → машина.
+ */
+const LATIN_MERCHANTS: { re: RegExp; key: string }[] = [
+  { re: /\b(pyaterochka|perekrestok|magnit|lenta|auchan|ashan|vkusvill|vkus ?vill|dixy|diksi|metro c&c|metro cash|spar|okey|o'?key|verny|azbuka vkusa|samokat|lavka|chizhik|svetofor|fix ?price|globus|karusel|bristol|krasnoe ?& ?beloe|krasnoe i beloe)/, key: 'groceries' },
+  { re: /\b(shokoladnitsa|coffee|kofe|cafe|kafe|restoran|restaurant|burger|kfc|rostics|vkusno|dodo|teremok|tanuki|yakitoriya|starbucks|cofix|surf coffee|eda\.yandex|yandex ?eda|yandex\*eda|delivery ?club|kuxnya|kukhnya|pizza|sushi|stolovaya)/, key: 'cafe' },
+  { re: /\b(yandex ?go|yandex\*taxi|yandex ?taxi|taxi|uber|citymobil|mosgortrans|metro moskv|moskovskiy metropoliten|troika|mos\.?transport|rzd|aeroflot|pobeda|s7 |tutu)/, key: 'transport' },
+  { re: /\b(lukoil|gazprom ?neft|gazpromneft|rosneft|tatneft|shell|bp |neste|azs|teboil|trassa|parking|parkovka|moypark)/, key: 'car' },
+  { re: /\b(mts|megafon|beeline|bilain|tele2|t2 |rostelecom|domru|dom\.ru|mgts|yota)/, key: 'mobile' },
+  { re: /\b(apteka|rigla|zdravcity|asna|gorzdrav|36[.,]6|invitro|gemotest|medsi|sm-klinika|doktor|clinic|klinika|stomat)/, key: 'health' },
+  { re: /\b(lamoda|zara|hm |h&m|uniqlo|gloria jeans|sportmaster|befree|ostin|o'stin|love republic|zolla|kari|ekonika|rendez)/, key: 'clothes' },
+  { re: /\b(kinopoisk|ivi|okko|kion|start\.ru|yandex ?plus|yandex\*plus|spotify|apple\.com|google ?play|steam|vk ?muzyka|boom)/, key: 'subscriptions' },
+  { re: /\b(leroy|leroymerlin|obi|ikea|hoff|castorama|petrovich|maxidom|fix price)/, key: 'household' },
+  { re: /\b(detskiy mir|detmir|det ?mir|korablik|dochki)/, key: 'kids_other' },
+  { re: /\b(4 lapy|chetyre lapy|zoo|beethoven|vetklinika)/, key: 'pets' },
+  { re: /\b(kino|cinema|karo|formula kino|teatr|theatre|muzey|museum|kassir|ticketland)/, key: 'leisure' },
+];
+
+const TRANSLIT: Record<string, string> = {
+  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f',
+  х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'shch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
+};
+/** Кириллица → латиница, как в выписках по картам (ГОСТ для загранпаспортов). */
+export function translit(s: string): string {
+  return [...s.toLowerCase()].map((ch) => TRANSLIT[ch] ?? ch).join('');
+}
+
 /** Коды MCC → категории справочника. */
 const MCC_MAP: { codes: (number | [number, number])[]; key: string }[] = [
   { codes: [5411, 5422, 5441, 5451, 5462, 5499], key: 'groceries' },
@@ -295,11 +324,12 @@ function mccToKey(mcc: string | null): string | null {
   return null;
 }
 
-export type SuggestionReason = 'rule' | 'keyword' | 'bank_category' | 'mcc' | 'none';
+export type SuggestionReason = 'rule' | 'keyword' | 'merchant' | 'bank_category' | 'mcc' | 'none';
 
 export const SUGGESTION_REASONS: Record<SuggestionReason, string> = {
   rule: 'как вы относили раньше',
   keyword: 'по названию',
+  merchant: 'по магазину',
   bank_category: 'по категории банка',
   mcc: 'по коду MCC',
   none: 'не определилась',
@@ -337,9 +367,24 @@ export function suggestCategory(
       if (text.includes(stem) && (!best || stem.length > best.len)) best = { id: c.id, len: stem.length };
     }
   }
+  // то же по-латински: «PYATEROCHKA» ↔ «пятёрочка»; короткие слова не берём — «gaz», «sad» дают ложные совпадения
+  for (const c of categories) {
+    for (const word of [norm(c.name), ...(budgetCatalogItem(c.catalogKey)?.aliases ?? [])]) {
+      const lat = translit(word);
+      if (lat.length < 5 || lat === word) continue;
+      const stem = lat.length > 6 ? lat.slice(0, -1) : lat;
+      if (new RegExp(`(^|[^a-z])${stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(text) && (!best || stem.length > best.len)) best = { id: c.id, len: stem.length };
+    }
+  }
   if (best) return { categoryId: best.id, reason: 'keyword' };
 
   const byKey = (key: string | null) => (key ? categories.find((c) => c.catalogKey === key)?.id ?? null : null);
+  for (const m of LATIN_MERCHANTS) {
+    if (m.re.test(text)) {
+      const id = byKey(m.key) ?? (m.key === 'car' ? byKey('transport') : null);
+      if (id) return { categoryId: id, reason: 'merchant' };
+    }
+  }
   const bc = norm(op.bankCategory);
   if (bc) {
     for (const m of BANK_CATEGORY_MAP) {

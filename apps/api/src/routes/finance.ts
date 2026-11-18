@@ -64,6 +64,7 @@ export const financeRoutes: FastifyPluginAsyncZod = async (app) => {
       return stripNulls(rest);
     },
     validate: async (tx, hid, v, existing) => {
+      await assertOwned(tx, s.householdMembers, v.memberId as string | null, hid, 'Участник');
       // включили автоплатёж (или сменили день) — начинаем с текущего месяца заново
       if (v.autoPayDay !== undefined && (!existing || v.autoPayDay !== existing.autoPayDay)) v.autoPayLastMonth = null;
     },

@@ -1,0 +1,2 @@
+ALTER TABLE "living_expenses" ADD COLUMN "member_id" uuid;--> statement-breakpoint
+ALTER TABLE "living_expenses" ADD CONSTRAINT "living_expenses_member_id_household_members_id_fk" FOREIGN KEY ("member_id") REFERENCES "public"."household_members"("id") ON DELETE set null ON UPDATE no action;

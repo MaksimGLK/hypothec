@@ -1,4 +1,4 @@
-import { formatDateRu, formatRub, parseCsvText, type ColumnMapping, type OperationKind } from '@hypothec/core';
+import { formatDateRu, formatRub, parseCsvText, parsePdfStatement, type BankId, type ColumnMapping, type OperationKind, type PdfTextItem } from '@hypothec/core';
 import { ArrowLeft, FileUp } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
@@ -42,13 +42,44 @@ const KIND: Record<OperationKind, { label: string; tone: 'neutral' | 'ok' | 'war
   failed: { label: 'не прошла', tone: 'neutral' },
 };
 
-/** Файл → таблица строк. CSV (UTF-8 или Windows-1251) и Excel (.xlsx). Даты из Excel — строкой ГГГГ-ММ-ДД. */
-async function readTable(file: File): Promise<Cell[][]> {
+/** PDF → кусочки текста с координатами (pdf.js грузится только при выборе PDF). */
+async function readPdfItems(file: File): Promise<PdfTextItem[]> {
+  const pdfjs = await import('pdfjs-dist');
+  const { default: workerUrl } = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
+  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+  const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
+  const doc = await task.promise;
+  const items: PdfTextItem[] = [];
+  try {
+    for (let n = 1; n <= Math.min(doc.numPages, 200); n++) {
+      const page = await doc.getPage(n);
+      const height = page.getViewport({ scale: 1 }).height;
+      const content = await page.getTextContent();
+      for (const it of content.items) {
+        if (!('str' in it) || !it.str.trim()) continue;
+        items.push({ page: n, x: it.transform[4] as number, y: height - (it.transform[5] as number), width: it.width, str: it.str });
+      }
+    }
+  } finally {
+    await task.destroy();
+  }
+  return items;
+}
+
+/** Файл → таблица строк. CSV (UTF-8 или Windows-1251), Excel (.xlsx) и PDF. Даты из Excel — строкой ГГГГ-ММ-ДД. */
+async function readTable(file: File): Promise<{ rows: Cell[][]; bank?: BankId }> {
   const name = file.name.toLowerCase();
+  if (name.endsWith('.pdf') || file.type === 'application/pdf') {
+    const items = await readPdfItems(file);
+    if (!items.length) throw new Error('В PDF нет текста — похоже, это скан. Скачайте выписку из банка заново в PDF или в формате Excel/CSV.');
+    const res = parsePdfStatement(items);
+    if (res.rows.length < 2) throw new Error('В PDF не нашли операций. Попробуйте выгрузить выписку в формате Excel или CSV.');
+    return { rows: res.rows, bank: res.bank };
+  }
   if (name.endsWith('.xlsx')) {
     const { readSheet } = await import('read-excel-file/browser');
     const data = await readSheet(file);
-    return data.map((row) =>
+    const rows = data.map((row) =>
       row.map((c) => {
         if (c instanceof Date) return `${c.getFullYear()}-${String(c.getMonth() + 1).padStart(2, '0')}-${String(c.getDate()).padStart(2, '0')}`;
         if (typeof c === 'number') return c;
@@ -56,12 +87,13 @@ async function readTable(file: File): Promise<Cell[][]> {
         return String(c);
       }),
     );
+    return { rows };
   }
   if (name.endsWith('.xls')) throw new Error('Старый формат .xls не поддерживается. Сохраните выписку как .xlsx или CSV.');
   const buf = await file.arrayBuffer();
   let text = new TextDecoder('utf-8').decode(buf);
   if (text.includes('�')) text = new TextDecoder('windows-1251').decode(buf);
-  return parseCsvText(text);
+  return { rows: parseCsvText(text) };
 }
 
 const MAPPING_FIELDS: { key: keyof ColumnMapping; label: string; required?: boolean }[] = [
@@ -77,10 +109,11 @@ export default function ImportPage() {
   const navigate = useNavigate();
   const toast = useToast();
   const cats = useHh<LivingDto[]>('/living-expenses');
-  const preview = useHhMutation<{ rows: Cell[][]; manual?: { headerRow: number; mapping: ColumnMapping } }, Preview>('POST', '/budget/import/preview', { silent: true });
+  const preview = useHhMutation<{ rows: Cell[][]; manual?: { headerRow: number; mapping: ColumnMapping }; bank?: BankId }, Preview>('POST', '/budget/import/preview', { silent: true });
   const commit = useHhMutation<Record<string, unknown>, { created: number; skipped: number; learned: number }>('POST', '/budget/import/commit');
   const [rows, setRows] = useState<Cell[][] | null>(null);
   const [fileName, setFileName] = useState('');
+  const [bankHint, setBankHint] = useState<BankId | undefined>(undefined);
   const [manual, setManual] = useState<{ headerRow: number; mapping: Partial<ColumnMapping> }>({ headerRow: 0, mapping: {} });
   const [choice, setChoice] = useState<Record<string, string | null>>({});
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
@@ -94,10 +127,11 @@ export default function ImportPage() {
     setChoice({});
     setExcluded(new Set());
     try {
-      const table = await readTable(file);
+      const { rows: table, bank } = await readTable(file);
       setRows(table);
+      setBankHint(bank);
       setFileName(file.name);
-      const res = await preview.mutateAsync({ rows: table.slice(0, 5000) });
+      const res = await preview.mutateAsync({ rows: table.slice(0, 5000), bank });
       // уже внесённые раньше — сразу исключены
       setExcluded(new Set(res.operations.filter((o) => o.duplicate).map((o) => o.importKey)));
     } catch (e) {
@@ -138,23 +172,23 @@ export default function ImportPage() {
         <label className="flex cursor-pointer flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-border px-4 py-8 text-center hover:bg-surface-2">
           <FileUp className="size-8 text-primary" aria-hidden />
           <span className="font-medium">{fileName || 'Выберите файл выписки'}</span>
-          <span className="text-sm text-ink-2">CSV или Excel (.xlsx) из приложения банка</span>
-          <input type="file" accept=".csv,.xlsx,.xls,text/csv" className="sr-only" aria-label="Файл выписки" onChange={(e) => e.target.files?.[0] && void onFile(e.target.files[0])} />
+          <span className="text-sm text-ink-2">PDF, Excel (.xlsx) или CSV из приложения банка</span>
+          <input type="file" accept=".pdf,.csv,.xlsx,.xls,text/csv,application/pdf" className="sr-only" aria-label="Файл выписки" onChange={(e) => e.target.files?.[0] && void onFile(e.target.files[0])} />
         </label>
         <details className="mt-3 text-sm">
           <summary className="cursor-pointer text-primary">Как выгрузить выписку из Т-Банка, ВТБ и Альфа-Банка</summary>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-ink-2">
             <li>
-              <strong>Т-Банк:</strong> в личном кабинете на сайте откройте карту или счёт → «Выписка» (или «Операции» → выгрузка), выберите период и формат CSV или Excel.
+              <strong>Т-Банк:</strong> в личном кабинете на сайте откройте карту или счёт → «Выписка» (или «Операции» → выгрузка), выберите период и формат PDF, CSV или Excel.
             </li>
             <li>
-              <strong>ВТБ:</strong> в ВТБ Онлайн откройте карту или счёт → «Выписка», выберите период и формат Excel.
+              <strong>ВТБ:</strong> в ВТБ Онлайн откройте карту или счёт → «Выписка», выберите период и формат PDF или Excel.
             </li>
             <li>
-              <strong>Альфа-Банк:</strong> в Альфа-Онлайн откройте счёт → «Выписка», выберите период и формат Excel или CSV.
+              <strong>Альфа-Банк:</strong> в Альфа-Онлайн откройте счёт → «Выписка», выберите период и формат PDF, Excel или CSV.
             </li>
           </ul>
-          <p className="mt-2 text-xs text-muted">Названия пунктов меню у банков иногда меняются. Подойдёт любая выписка с колонками «дата», «сумма» и «описание». Файл не хранится — сохраняются только внесённые траты.</p>
+          <p className="mt-2 text-xs text-muted">Названия пунктов меню у банков иногда меняются. Подойдёт любая выписка с колонками «дата», «сумма» и «описание». PDF должен быть текстовым (из банка), а не сканом. Файл не хранится — сохраняются только внесённые траты.</p>
         </details>
       </Card>
 
@@ -197,7 +231,7 @@ export default function ImportPage() {
           <Button
             className="mt-4"
             disabled={manual.mapping.date === undefined || manual.mapping.description === undefined || (manual.mapping.amount === undefined && manual.mapping.expense === undefined)}
-            onClick={() => preview.mutate({ rows: rows.slice(0, 5000), manual: { headerRow: manual.headerRow, mapping: manual.mapping as ColumnMapping } })}
+            onClick={() => preview.mutate({ rows: rows.slice(0, 5000), manual: { headerRow: manual.headerRow, mapping: manual.mapping as ColumnMapping }, bank: bankHint })}
           >
             Разобрать
           </Button>

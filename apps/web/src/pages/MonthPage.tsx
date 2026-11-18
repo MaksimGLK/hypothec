@@ -4,7 +4,7 @@ import { type FormEvent, type ReactNode, useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../api/client.js';
 import { useHh, useHhMutation, useHousehold } from '../api/household.js';
-import type { AccountDto, IncomeDto, LivingDto, SettingsDto } from '../api/types.js';
+import type { AccountDto, IncomeDto, LivingDto, MemberDto, SettingsDto } from '../api/types.js';
 import { DistributionCard } from '../components/distribution.js';
 import { PendingPrepayments } from '../components/pending-prepayments.js';
 import { DateCell, DayCell, FactCell, MoneyCell, TextCell } from '../components/inline.js';
@@ -243,6 +243,7 @@ function IncomeRow({ income }: { income: IncomeDto }) {
 function Living({ month }: { month: string }) {
   const cats = useHh<LivingDto[]>('/living-expenses');
   const summary = useHh<BudgetMonth>(`/budget/summary?month=${month}`);
+  const members = useHh<MemberDto[]>('/members');
   const add = useHhMutation<Record<string, unknown>>('POST', '/living-expenses', { success: 'Категория добавлена' });
   const bootstrap = useHhMutation<Record<string, never>>('POST', '/budget/bootstrap', { success: 'Добавили типовые категории — впишите суммы' });
   const parse = useHhMutation<{ text: string }, SpendingDraft>('POST', '/budget/parse', { silent: true });
@@ -257,6 +258,15 @@ function Living({ month }: { month: string }) {
   const factOf = (id: string) => summary.data?.categories.find((c) => c.categoryId === id)?.factKop ?? 0;
   const totalPlan = list.reduce((s, c) => s + c.amountKop, 0);
   const totalFact = list.reduce((s, c) => s + factOf(c.id), 0);
+  const people = members.data ?? [];
+  const byPerson = list.some((c) => c.memberId)
+    ? [{ id: '', label: 'общие' }, ...people.map((m) => ({ id: m.id, label: m.displayName || m.name }))]
+        .map((g) => {
+          const cs = list.filter((c) => (c.memberId ?? '') === g.id);
+          return { ...g, n: cs.length, plan: cs.reduce((s, c) => s + c.amountKop, 0), fact: cs.reduce((s, c) => s + factOf(c.id), 0) };
+        })
+        .filter((g) => g.n > 0)
+    : [];
 
   const quickAdd = async (e: FormEvent) => {
     e.preventDefault();
@@ -288,7 +298,7 @@ function Living({ month }: { month: string }) {
       </div>
       <ul className="divide-y divide-border">
         {list.map((c) => (
-          <LivingRow key={c.id} cat={c} fact={factOf(c.id)} isCurrent={isCurrent} month={month} />
+          <LivingRow key={c.id} cat={c} fact={factOf(c.id)} isCurrent={isCurrent} month={month} members={people} />
         ))}
       </ul>
       <form
@@ -310,6 +320,18 @@ function Living({ month }: { month: string }) {
           план <Money kop={totalPlan} /> · потрачено <Money kop={totalFact} className={cx(totalFact > totalPlan && 'text-danger')} />
         </span>
       </div>
+      {byPerson.length > 0 && (
+        <ul className="mt-1 space-y-0.5 px-2 text-xs text-ink-2" aria-label="Итого по людям">
+          {byPerson.map((g) => (
+            <li key={g.id || 'shared'} className="flex justify-between gap-4">
+              <span className="first-letter:uppercase">{g.label}</span>
+              <span>
+                план <Money kop={g.plan} /> · потрачено <Money kop={g.fact} className={cx(g.fact > g.plan && 'text-danger')} />
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
       <p className="mt-2 px-2 text-xs text-muted">
         «Потрачено» можно править прямо в ячейке: впишите итог за месяц («7500») или добавьте к уже потраченному — «+2500».
       </p>
@@ -323,7 +345,7 @@ function Living({ month }: { month: string }) {
   );
 }
 
-function LivingRow({ cat, fact, isCurrent, month }: { cat: LivingDto; fact: number; isCurrent: boolean; month: string }) {
+function LivingRow({ cat, fact, isCurrent, month, members }: { cat: LivingDto; fact: number; isCurrent: boolean; month: string; members: MemberDto[] }) {
   const save = useHhMutation<Record<string, unknown>>('PATCH', `/living-expenses/${cat.id}`);
   const remove = useHhMutation('DELETE', `/living-expenses/${cat.id}`, { success: 'Категория удалена' });
   const pay = useHhMutation<Record<string, unknown>>('POST', '/budget/spendings', { success: `«${cat.name}» — оплачено` });
@@ -334,6 +356,21 @@ function LivingRow({ cat, fact, isCurrent, month }: { cat: LivingDto; fact: numb
       <span className="col-span-3 flex min-w-0 items-center gap-1 sm:col-span-1">
         <TextCell value={cat.name} label="Название категории" onSave={(name) => save.mutate({ name, version: cat.version })} />
         {cat.autoPayDay && <span className="shrink-0 text-xs text-muted">авто {cat.autoPayDay}-го</span>}
+        {(members.length > 1 || cat.memberId) && (
+          <select
+            aria-label={`Чья категория: ${cat.name}`}
+            className="h-7 shrink-0 rounded-lg border border-border bg-surface px-1 text-xs text-ink-2"
+            value={cat.memberId ?? ''}
+            onChange={(e) => save.mutate({ memberId: e.target.value || null, version: cat.version })}
+          >
+            <option value="">общая</option>
+            {members.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.displayName || m.name}
+              </option>
+            ))}
+          </select>
+        )}
       </span>
       <span className="flex items-center gap-1 sm:block">
         <span className="text-xs text-muted sm:hidden">план</span>
