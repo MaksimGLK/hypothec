@@ -13,7 +13,8 @@ export const RatePercent = z
   .string()
   .regex(/^\d{1,2}(\.\d{1,3})?$/, { message: 'Ставка в процентах, например 16 или 5.9' });
 
-export const Percent = z.string().regex(/^(100|\d{1,2})(\.\d{1,2})?$/, { message: 'Процент от 0 до 100' });
+/** Процент от 0 до 100, до 4 знаков после точки: тарифы страховок бывают вида 0.1869. */
+export const Percent = z.string().regex(/^(100(\.0{1,4})?|\d{1,2}(\.\d{1,4})?)$/, { message: 'Процент от 0 до 100' });
 
 export const Id = z.string().min(1).max(64);
 export const Uuid = z.uuid();
