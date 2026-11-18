@@ -8,6 +8,7 @@ import {
   CreatePrepaymentRequest,
   IsoDate,
   Kop,
+  Percent,
   RatePercent,
   RegisterRequest,
   TaxMember,
@@ -39,6 +40,12 @@ describe('валидация', () => {
     expect(RatePercent.safeParse('16').success).toBe(true);
     expect(RatePercent.safeParse('5.9').success).toBe(true);
     expect(RatePercent.safeParse('16,5').success).toBe(false);
+    // тариф страховки жизни — 4 знака после точки
+    expect(Percent.safeParse('0.1869').success).toBe(true);
+    expect(Percent.safeParse('0.15').success).toBe(true);
+    expect(Percent.safeParse('100').success).toBe(true);
+    expect(Percent.safeParse('100.5').success).toBe(false);
+    expect(Percent.safeParse('0.18691').success).toBe(false);
   });
 
   it('регистрация требует согласия на обработку ПДн и пароль от 8 символов', () => {
