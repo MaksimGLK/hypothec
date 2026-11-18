@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useHh, useHhMutation } from '../api/household.js';
 import type { ExpenseDto, StageDto } from '../api/types.js';
 import { LessonButton, LessonsFor } from '../components/learning.js';
-import { Badge, Button, Card, ConfirmButton, cx, DateText, Empty, ErrorBox, Field, Input, Modal, Money, PageHeader, Select, Spinner } from '../components/ui/index.js';
+import { Badge, Button, Card, ConfirmButton, cx, DateInput, DateText, Empty, ErrorBox, Field, Input, Modal, Money, PageHeader, Select, Spinner } from '../components/ui/index.js';
 
 const STATUS: Record<StageDto['status'], { label: string; tone: 'neutral' | 'primary' | 'ok' | 'warn' }> = {
   todo: { label: 'Впереди', tone: 'neutral' },
@@ -107,10 +107,10 @@ function StageItem({ stage, index, expenses }: { stage: StageDto; index: number;
               </Select>
             </Field>
             <Field label="Плановая дата" htmlFor={`pd-${stage.id}`}>
-              <Input id={`pd-${stage.id}`} type="date" value={stage.plannedDate ?? ''} onChange={(e) => update.mutate({ plannedDate: e.target.value || null, version: stage.version })} />
+              <DateInput id={`pd-${stage.id}`} value={stage.plannedDate ?? ''} onChange={(e) => update.mutate({ plannedDate: e.target.value || null, version: stage.version })} />
             </Field>
             <Field label="Фактическая дата" htmlFor={`ad-${stage.id}`}>
-              <Input id={`ad-${stage.id}`} type="date" value={stage.actualDate ?? ''} onChange={(e) => update.mutate({ actualDate: e.target.value || null, version: stage.version })} />
+              <DateInput id={`ad-${stage.id}`} value={stage.actualDate ?? ''} onChange={(e) => update.mutate({ actualDate: e.target.value || null, version: stage.version })} />
             </Field>
           </div>
           {stage.templateKey === 'move_in' && <p className="text-xs text-muted">Дата этого этапа — дата ключей: от неё зависят расходы на обустройство, окончание аренды и право на вычет.</p>}
@@ -205,7 +205,7 @@ function AddStage({ open, onOpenChange }: { open: boolean; onOpenChange(v: boole
           <Input id="new-stage" required value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Например, согласовать перепланировку" />
         </Field>
         <Field label="Плановая дата" htmlFor="new-stage-date">
-          <Input id="new-stage-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          <DateInput id="new-stage-date" value={date} onChange={(e) => setDate(e.target.value)} />
         </Field>
         <Card tone="info">
           <p className="text-sm">Свои этапы не удаляются при повторном прохождении мастера.</p>

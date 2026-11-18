@@ -1,4 +1,4 @@
-import { formatRub, parseDate, type RateChange } from '@hypothec/core';
+import { formatRub, parseDate, type RateChange, formatDateNum } from '@hypothec/core';
 import { Plus, Trash2, Upload } from 'lucide-react';
 import { type FormEvent, useMemo, useState } from 'react';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -6,7 +6,7 @@ import { useAuth } from '../../api/auth.js';
 import { useHh, useHhMutation } from '../../api/household.js';
 import type { LoanDto, ReconcileResult, ScheduleDto } from '../../api/types.js';
 import { LessonsFor, Term } from '../../components/learning.js';
-import { Badge, Button, Card, cx, DateText, Empty, ErrorBox, Field, Input, Modal, Money, MoneyInput, PageHeader, Select, Spinner, Stat, Switch } from '../../components/ui/index.js';
+import { DateInput, Badge, Button, Card, cx, DateText, Empty, ErrorBox, Field, Input, Modal, Money, MoneyInput, PageHeader, Select, Spinner, Stat, Switch } from '../../components/ui/index.js';
 import { Tabs } from '../../layout/AppLayout.js';
 
 export const LOAN_TABS = [
@@ -103,7 +103,7 @@ function LoanDetails({ loan }: { loan: LoanDto }) {
       >
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <Stat label="Сумма кредита" value={<Money kop={loan.principalKop} />} />
-          <Stat label="Ставка" value={`${loan.annualRate.replace('.', ',')}%`} sub={(loan.rateChanges ?? []).length ? `меняется с ${new Date(loan.rateChanges![0]!.fromDate).toLocaleDateString('ru-RU')}` : undefined} />
+          <Stat label="Ставка" value={`${loan.annualRate.replace('.', ',')}%`} sub={(loan.rateChanges ?? []).length ? `меняется с ${formatDateNum(loan.rateChanges![0]!.fromDate)}` : undefined} />
           <Stat label="Срок" value={`${Math.round(loan.termMonths / 12)} лет`} sub={loan.type === 'annuity' ? 'аннуитет' : 'дифференцированный'} />
           <Stat label="Остаток долга" value={<Money kop={balanceNow} />} />
         </div>
@@ -139,7 +139,7 @@ function LoanDetails({ loan }: { loan: LoanDto }) {
                   <CartesianGrid stroke="var(--border)" vertical={false} />
                   <XAxis dataKey="date" tickFormatter={(d: string) => d.slice(0, 4)} minTickGap={40} stroke="var(--muted)" fontSize={12} />
                   <YAxis tickFormatter={rubAxis} stroke="var(--muted)" fontSize={12} width={60} />
-                  <Tooltip {...chartTooltip} labelFormatter={(d) => new Date(String(d)).toLocaleDateString('ru-RU')} formatter={(v) => [formatRub(Number(v), { kopecks: 'never' }), 'Остаток']} />
+                  <Tooltip {...chartTooltip} labelFormatter={(d) => formatDateNum(String(d))} formatter={(v) => [formatRub(Number(v), { kopecks: 'never' }), 'Остаток']} />
                   <Area dataKey="balanceKop" stroke="var(--chart-1)" fill="var(--chart-1)" fillOpacity={0.15} strokeWidth={2} />
                 </AreaChart>
               </ResponsiveContainer>
@@ -202,7 +202,7 @@ function ScheduleTable({ schedule }: { schedule: ScheduleDto }) {
           <tbody>
             {rows.map((r) => (
               <tr key={r.kind + r.date} className={cx('border-t border-border', r.kind === 'prepayment' && 'bg-primary-soft')}>
-                <td className="px-4 py-2 sm:px-2">{new Date(r.date).toLocaleDateString('ru-RU')}</td>
+                <td className="px-4 py-2 sm:px-2">{formatDateNum(r.date)}</td>
                 <td className="num px-2 py-2 text-right">{r.paymentKop ? formatRub(r.paymentKop) : '—'}</td>
                 <td className="num px-2 py-2 text-right text-ink-2">{formatRub(r.interestKop)}</td>
                 <td className="num px-2 py-2 text-right text-ink-2">{formatRub(r.principalKop)}</td>
@@ -273,7 +273,7 @@ export function LoanForm({ loan, onDone }: { loan?: LoanDto; onDone(): void }) {
           </Select>
         </Field>
         <Field label="Дата выдачи" htmlFor="ln-issue">
-          <Input id="ln-issue" type="date" required value={v.issueDate} onChange={(e) => set('issueDate', e.target.value)} />
+          <DateInput id="ln-issue" required value={v.issueDate} onChange={(e) => set('issueDate', e.target.value)} />
         </Field>
         <Field label="День платежа" htmlFor="ln-day" hint="По умолчанию — день выдачи">
           <Input id="ln-day" type="number" min={1} max={31} value={v.paymentDay ?? ''} onChange={(e) => set('paymentDay', e.target.value ? Number(e.target.value) : undefined)} />
@@ -300,7 +300,7 @@ export function LoanForm({ loan, onDone }: { loan?: LoanDto; onDone(): void }) {
         {changes.map((c, i) => (
           <div key={i} className="mt-2 flex items-end gap-2">
             <Field label="С даты" htmlFor={`rc-d-${i}`}>
-              <Input id={`rc-d-${i}`} type="date" value={c.fromDate} onChange={(e) => set('rateChanges', changes.map((x, j) => (j === i ? { ...x, fromDate: e.target.value } : x)))} />
+              <DateInput id={`rc-d-${i}`} value={c.fromDate} onChange={(e) => set('rateChanges', changes.map((x, j) => (j === i ? { ...x, fromDate: e.target.value } : x)))} />
             </Field>
             <Field label="Ставка, %" htmlFor={`rc-r-${i}`}>
               <Input id={`rc-r-${i}`} inputMode="decimal" value={c.annualRate} onChange={(e) => set('rateChanges', changes.map((x, j) => (j === i ? { ...x, annualRate: e.target.value.replace(/[^\d.,]/g, '') } : x)))} />
@@ -384,7 +384,7 @@ function BankDiff({ loanId }: { loanId: string }) {
         <ul className="space-y-1 text-ink-2">
           {bad.map((i) => (
             <li key={i.bank.date}>
-              {new Date(i.bank.date).toLocaleDateString('ru-RU')}: {i.calculatedDate === null ? 'нет такой даты в расчёте' : <>платёж {i.paymentDiffKop ? formatRub(i.paymentDiffKop) : 'совпадает'}{i.interestDiffKop ? `, проценты ${formatRub(i.interestDiffKop)}` : ''}</>}
+              {formatDateNum(i.bank.date)}: {i.calculatedDate === null ? 'нет такой даты в расчёте' : <>платёж {i.paymentDiffKop ? formatRub(i.paymentDiffKop) : 'совпадает'}{i.interestDiffKop ? `, проценты ${formatRub(i.interestDiffKop)}` : ''}</>}
             </li>
           ))}
         </ul>

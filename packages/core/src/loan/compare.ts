@@ -115,3 +115,62 @@ export function compareModes(loan: LoanInput, prepayments: readonly PrepaymentIn
     ),
   };
 }
+
+export interface CandidateModeResult {
+  /** Экономия на процентах именно от этой досрочки — поверх уже запланированных. */
+  savingsKop: Kop;
+  monthsSaved: number;
+  /** Обязательный платёж сразу после этой досрочки; 0 — кредит закрылся. */
+  paymentAfterKop: Kop;
+  /** Сколько реально уходит в месяц: обязательный платёж, доплата до прежней суммы и ежемесячные досрочки. */
+  monthlyOutlayKop: Kop;
+  payoffDate: IsoDate;
+  /** На сколько месяцев раньше срока по договору. */
+  monthsBeforeContract: number;
+  /** Экономия на процентах по сравнению с договором без досрочек — вместе с уже запланированными. */
+  savingsVsContractKop: Kop;
+}
+
+export interface CandidateModeComparison {
+  reduceTerm: CandidateModeResult;
+  reducePayment: CandidateModeResult;
+  reducePaymentKeepAmount: CandidateModeResult;
+}
+
+/**
+ * Новая досрочка в трёх режимах поверх уже запланированных.
+ * Режим меняется только у новой: прошлые досрочки уже внесены или выбраны — и остаются как есть.
+ */
+export function compareCandidateModes(
+  loan: LoanInput,
+  existing: readonly PrepaymentInput[],
+  candidate: PrepaymentInput,
+): CandidateModeComparison {
+  const contract = buildSchedule(loan, []);
+  const base = buildSchedule(loan, existing);
+  const withMode = (mode: PrepaymentMode): CandidateModeResult => {
+    const all = [...existing, { ...candidate, mode }];
+    const schedule = buildSchedule(loan, all);
+    const at = schedule.rows.findIndex((r) => r.prepaymentIds.includes(candidate.id));
+    const after = at >= 0 ? schedule.rows.slice(at + 1).find((r) => r.kind === 'payment') : undefined;
+    const monthlyExtra = after
+      ? all
+          .filter((p) => p.kind === 'monthly' && after.date >= (p.startDate ?? loan.issueDate) && (!p.endDate || after.date <= p.endDate))
+          .reduce((sum, p) => sum + p.amountKop, 0)
+      : 0;
+    return {
+      savingsKop: base.summary.totalInterestKop - schedule.summary.totalInterestKop,
+      monthsSaved: monthsBetween(schedule.summary.payoffDate, base.summary.payoffDate),
+      paymentAfterKop: after?.paymentKop ?? 0,
+      monthlyOutlayKop: after ? after.paymentKop + after.keepExtraKop + monthlyExtra : 0,
+      payoffDate: schedule.summary.payoffDate,
+      monthsBeforeContract: monthsBetween(schedule.summary.payoffDate, contract.summary.payoffDate),
+      savingsVsContractKop: contract.summary.totalInterestKop - schedule.summary.totalInterestKop,
+    };
+  };
+  return {
+    reduceTerm: withMode('reduce_term'),
+    reducePayment: withMode('reduce_payment'),
+    reducePaymentKeepAmount: withMode('reduce_payment_keep_amount'),
+  };
+}

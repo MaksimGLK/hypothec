@@ -1,0 +1,1 @@
+ALTER TABLE "prepayments" ADD COLUMN "day_of_month" integer;

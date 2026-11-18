@@ -50,7 +50,7 @@ export async function createScenarioWith(
   tx: DbOrTx,
   householdId: string,
   name: string,
-  prepayments: { loanId: string; kind: string; amountKop: number; date?: string | null; startDate?: string | null; endDate?: string | null; mode: string; source?: string }[],
+  prepayments: { loanId: string; kind: string; amountKop: number; date?: string | null; startDate?: string | null; endDate?: string | null; dayOfMonth?: number | null; mode: string; source?: string }[],
 ): Promise<string> {
   const [sc] = await tx.insert(s.prepaymentScenarios).values({ householdId, name, isActive: false }).returning({ id: s.prepaymentScenarios.id });
   if (prepayments.length) {
@@ -64,6 +64,7 @@ export async function createScenarioWith(
         date: p.date ?? null,
         startDate: p.startDate ?? null,
         endDate: p.endDate ?? null,
+        dayOfMonth: p.dayOfMonth ?? null,
         mode: p.mode,
         source: p.source ?? 'manual',
       })),

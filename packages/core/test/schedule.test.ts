@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   annuityPayment,
   buildSchedule,
+  compareCandidateModes,
   compareModes,
   compareScenarios,
   type LoanInput,
@@ -77,6 +78,98 @@ describe('дифференцированный платёж', () => {
   it('платёж убывает каждый месяц', () => {
     const payments = s.rows.map((r) => r.paymentKop);
     for (let i = 1; i < payments.length - 1; i++) expect(payments[i]!).toBeLessThan(payments[i - 1]!);
+  });
+});
+
+describe('ежемесячная досрочка в своё число', () => {
+  const monthly = (over: Partial<PrepaymentInput> = {}): PrepaymentInput => ({ id: 'm', loanId: REFERENCE_LOAN.id, kind: 'monthly', amountKop: rub(50_000), startDate: '2026-02-01', mode: 'reduce_term', ...over });
+
+  it('считается как те же разовые досрочки в эти даты', () => {
+    const byDay = buildSchedule(REFERENCE_LOAN, [monthly({ dayOfMonth: 5, endDate: '2026-07-31' })]);
+    const dates = ['2026-02-05', '2026-03-05', '2026-04-05', '2026-05-05', '2026-06-05', '2026-07-05'];
+    const manual = buildSchedule(REFERENCE_LOAN, dates.map((d) => ({ ...oneOff(d, 50_000, 'reduce_term', 'm') })));
+    expect(byDay.summary.totalInterestKop).toBe(manual.summary.totalInterestKop);
+    expect(byDay.summary.totalPrepaidKop).toBe(rub(300_000));
+    expectConsistent(REFERENCE_LOAN, byDay);
+  });
+
+  it('чем раньше деньги уменьшают долг, тем меньше процентов (проценты по дням)', () => {
+    const daily: LoanInput = { ...REFERENCE_LOAN, interestMode: 'daily' };
+    const at = (dayOfMonth: number) => buildSchedule(daily, [monthly({ dayOfMonth })]);
+    expect(at(5).summary.totalInterestKop).toBeLessThan(at(25).summary.totalInterestKop);
+    expectConsistent(daily, at(5));
+  });
+
+  it('число платежа и банк «только в дату платежа» — как обычная ежемесячная доплата', () => {
+    const plain = buildSchedule(REFERENCE_LOAN, [monthly()]);
+    expect(buildSchedule(REFERENCE_LOAN, [monthly({ dayOfMonth: 15 })]).rows).toEqual(plain.rows);
+    const strict: LoanInput = { ...REFERENCE_LOAN, bankRules: { onlyOnPaymentDate: true, minAmountKop: 0, noticeDays: 0 } };
+    expect(buildSchedule(strict, [monthly({ dayOfMonth: 5 })]).rows).toEqual(buildSchedule(strict, [monthly()]).rows);
+  });
+
+  it('31-е в коротком месяце — последний день месяца; до начала и после конца не вносится', () => {
+    const s = buildSchedule(REFERENCE_LOAN, [monthly({ dayOfMonth: 31, startDate: '2026-02-10', endDate: '2026-03-31' })]);
+    expect(s.rows.filter((r) => r.kind === 'prepayment').map((r) => r.date)).toEqual(['2026-02-28', '2026-03-31']);
+  });
+});
+
+describe('новая досрочка поверх уже запланированных', () => {
+  const existing = [oneOff('2026-01-15', 50_000, 'reduce_payment_keep_amount', 'old')];
+  const candidate = (amountRub: number) => oneOff('2026-06-15', amountRub, 'reduce_term', 'new');
+
+  it('платёж считается после новой досрочки и зависит от её суммы', () => {
+    const small = compareCandidateModes(REFERENCE_LOAN, existing, candidate(100_000)).reducePayment.paymentAfterKop;
+    const big = compareCandidateModes(REFERENCE_LOAN, existing, candidate(1_000_000)).reducePayment.paymentAfterKop;
+    expect(big).toBeLessThan(small);
+    // прежний расчёт смотрел на первую досрочку в графике и от суммы новой не зависел
+    const old = (a: number) => compareModes(REFERENCE_LOAN, [...existing, candidate(a)]).reducePayment.paymentAfterFirstPrepaymentKop;
+    expect(old(100_000)).toBe(old(1_000_000));
+  });
+
+  it('режим меняется только у новой досрочки', () => {
+    const r = compareCandidateModes(REFERENCE_LOAN, [oneOff('2026-01-15', 500_000, 'reduce_term', 'old')], candidate(500_000));
+    expect(r.reduceTerm.monthsSaved).toBeGreaterThan(0);
+    expect(r.reducePayment.monthsSaved).toBe(0);
+    expect(r.reducePayment.paymentAfterKop).toBeLessThan(r.reduceTerm.paymentAfterKop);
+    expect(r.reduceTerm.savingsKop).toBeGreaterThan(r.reducePayment.savingsKop);
+  });
+
+  it('«уменьшить платёж» отменяет прежнее «платить прежнюю сумму»', () => {
+    const r = compareCandidateModes(REFERENCE_LOAN, existing, candidate(500_000));
+    expect(r.reducePaymentKeepAmount.monthsSaved).toBeGreaterThan(0);
+    expect(r.reducePayment.savingsKop).toBeLessThan(r.reducePaymentKeepAmount.savingsKop);
+    const s = buildSchedule(REFERENCE_LOAN, [...existing, { ...candidate(500_000), mode: 'reduce_payment' }]);
+    expect(s.rows.filter((x) => x.date > '2026-06-15').every((x) => x.keepExtraKop === 0)).toBe(true);
+    expect(s.rows.filter((x) => x.date <= '2026-06-15').some((x) => x.keepExtraKop > 0)).toBe(true);
+    expectConsistent(REFERENCE_LOAN, s);
+  });
+
+  it('срок и экономия считаются и от договора: позже договора кредит не закрывается', () => {
+    const loan: LoanInput = { ...REFERENCE_LOAN, issueDate: '2026-10-08', paymentDay: 18 };
+    const old: PrepaymentInput = { ...oneOff('2026-10-18', 50_000, 'reduce_payment_keep_amount', 'old'), loanId: loan.id };
+    const r = compareCandidateModes(loan, [old], { ...oneOff('2026-12-02', 70_000, 'reduce_term', 'new'), loanId: loan.id });
+    expect(r.reducePayment.monthsSaved).toBe(-1); // к текущему плану
+    expect(r.reducePayment.monthsBeforeContract).toBe(0); // к договору
+    expect(r.reducePayment.payoffDate).toBe('2036-10-18');
+    expect(r.reduceTerm.monthsBeforeContract).toBe(3);
+    expect(r.reducePayment.savingsKop).toBeLessThan(0);
+    expect(r.reducePayment.savingsVsContractKop).toBeGreaterThan(0);
+  });
+
+  it('в месяц уходит не только обязательный платёж', () => {
+    const r = compareCandidateModes(REFERENCE_LOAN, existing, candidate(500_000));
+    // при прежней сумме обязательный платёж ниже, а денег уходит столько же
+    expect(r.reducePaymentKeepAmount.paymentAfterKop).toBeLessThan(17_280_520);
+    expect(r.reducePaymentKeepAmount.monthlyOutlayKop).toBe(17_280_520);
+    expect(r.reduceTerm.monthlyOutlayKop).toBe(17_280_520);
+    expect(r.reducePayment.monthlyOutlayKop).toBe(r.reducePayment.paymentAfterKop);
+    const monthly = compareCandidateModes(REFERENCE_LOAN, [], { id: 'm', loanId: REFERENCE_LOAN.id, kind: 'monthly', amountKop: rub(10_000), startDate: '2026-02-15', mode: 'reduce_term' });
+    expect(monthly.reduceTerm.monthlyOutlayKop).toBe(monthly.reduceTerm.paymentAfterKop + rub(10_000));
+  });
+
+  it('досрочка закрывает кредит — платежа после неё нет', () => {
+    const r = compareCandidateModes(REFERENCE_LOAN, [], candidate(20_000_000));
+    expect(r.reduceTerm.paymentAfterKop).toBe(0);
   });
 });
 

@@ -51,6 +51,7 @@ export function toPrepaymentInput(r: Row<typeof s.prepayments>): PrepaymentInput
     date: opt(r.date),
     startDate: opt(r.startDate),
     endDate: opt(r.endDate),
+    dayOfMonth: opt(r.dayOfMonth),
     mode: r.mode as PrepaymentInput['mode'],
     source: r.source as PrepaymentInput['source'],
   };

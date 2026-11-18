@@ -97,6 +97,15 @@ describe('путь семьи: мастер → доходы → план', () =
     const alt = await api('POST', path('/prepayment-scenarios'), { name: 'Миллион сразу' });
     const added = await api('POST', path(`/prepayment-scenarios/${alt.data.id}/prepayments`), { loanId, kind: 'one_off', amountKop: 100_000_000, date: '2027-01-15', mode: 'reduce_term' });
     expect(added.statusCode, added.body).toBe(201);
+    // число месяца сохраняется и переходит в копию сценария
+    const byDay = await api('POST', path(`/prepayment-scenarios/${alt.data.id}/prepayments`), { loanId, kind: 'monthly', amountKop: 2_000_000, startDate: '2027-02-01', dayOfMonth: 5, mode: 'reduce_term' });
+    expect(byDay.statusCode).toBe(201);
+    expect(byDay.data.prepayments.find((p: { kind: string }) => p.kind === 'monthly').dayOfMonth).toBe(5);
+    const copy = await api('POST', path('/prepayment-scenarios'), { name: 'Копия', copyFromId: alt.data.id });
+    expect(copy.data.prepayments.find((p: { kind: string }) => p.kind === 'monthly').dayOfMonth).toBe(5);
+    expect((await api('POST', path(`/prepayment-scenarios/${alt.data.id}/prepayments`), { loanId, kind: 'monthly', amountKop: 2_000_000, dayOfMonth: 32, mode: 'reduce_term' })).statusCode).toBe(400);
+    await api('DELETE', path(`/prepayment-scenarios/${copy.data.id}`));
+    await api('DELETE', path(`/prepayment-scenarios/${alt.data.id}/prepayments/${byDay.data.prepayments.find((p: { kind: string }) => p.kind === 'monthly').id}`));
     const monthly = await api('POST', path('/prepayment-scenarios'), { name: '20 тыс. в месяц' });
     await api('POST', path(`/prepayment-scenarios/${monthly.data.id}/prepayments`), { loanId, kind: 'monthly', amountKop: 2_000_000, startDate: '2026-11-01', mode: 'reduce_payment_keep_amount' });
 

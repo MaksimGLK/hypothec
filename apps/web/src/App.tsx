@@ -20,6 +20,7 @@ const StagesPage = lazy(() => import('./pages/StagesPage.js'));
 const IncomesPage = lazy(() => import('./pages/money/IncomesPage.js'));
 const BudgetPage = lazy(() => import('./pages/BudgetPage.js'));
 const MonthPage = lazy(() => import('./pages/MonthPage.js'));
+const ImportPage = lazy(() => import('./pages/ImportPage.js'));
 const ExpensesPage = lazy(() => import('./pages/money/ExpensesPage.js'));
 const AllocationPage = lazy(() => import('./pages/money/AllocationPage.js'));
 const LoanPage = lazy(() => import('./pages/loan/LoanPage.js'));
@@ -100,7 +101,8 @@ export function App() {
                 <Route path="/learn" element={page(<LearnPage />)} />
                 <Route path="/" element={<RequireScenario><DashboardPage /></RequireScenario>} />
                 <Route path="/stages" element={<RequireScenario>{page(<StagesPage />)}</RequireScenario>} />
- <Route path="/month" element={<RequireScenario>{page(<MonthPage />)}</RequireScenario>} />
+ <Route path="/budget/import" element={<RequireScenario>{page(<ImportPage />)}</RequireScenario>} />
+                <Route path="/month" element={<RequireScenario>{page(<MonthPage />)}</RequireScenario>} />
                 <Route path="/budget" element={<RequireScenario>{page(<BudgetPage />)}</RequireScenario>} />
                 <Route path="/money/incomes" element={<RequireScenario>{page(<IncomesPage />)}</RequireScenario>} />
                 <Route path="/money/expenses" element={<RequireScenario>{page(<ExpensesPage />)}</RequireScenario>} />

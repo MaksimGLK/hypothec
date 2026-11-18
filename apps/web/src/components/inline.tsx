@@ -1,6 +1,6 @@
-import { formatRub } from '@hypothec/core';
+import { formatDateRu, formatRub } from '@hypothec/core';
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
-import { cx, parseRubles } from './ui/index.js';
+import { cx, DateInput, parseRubles } from './ui/index.js';
 
 /**
  * Ячейка «как в таблице»: показывает значение, по нажатию превращается в поле, Enter или уход с поля — сохранить, Esc — отменить.
@@ -77,6 +77,36 @@ export function TextCell({ value, onSave, label, className }: { value: string; o
   return (
     <button type="button" onClick={c.start} aria-label={`${label}: изменить`} className={cx('min-w-0 truncate rounded-lg px-2 py-1 text-left hover:bg-surface-2', className)}>
       {value}
+    </button>
+  );
+}
+
+/** Дата разового поступления: показываем «12 ноября», по нажатию — поле даты. */
+export function DateCell({ value, onSave, label }: { value: string | null | undefined; onSave(date: string): void; label: string }) {
+  const c = useCell(
+    value ?? '',
+    onSave,
+    (t) => t || undefined,
+    (v) => v,
+  );
+  if (c.editing) {
+    return (
+      <DateInput
+        ref={c.ref}
+        autoFocus
+        picker={false}
+        aria-label={label}
+        className="h-8 w-32 rounded-lg border border-primary bg-surface px-2 focus:outline-none"
+        value={c.text}
+        onChange={(e) => c.setText(e.target.value)}
+        onBlur={c.commit}
+        onKeyDown={c.onKeyDown}
+      />
+    );
+  }
+  return (
+    <button type="button" onClick={c.start} aria-label={`${label}: изменить`} className={cx('rounded-lg px-2 py-1 text-center hover:bg-surface-2', !value && 'text-warn')}>
+      {value ? formatDateRu(value, { year: false }) : '—'}
     </button>
   );
 }

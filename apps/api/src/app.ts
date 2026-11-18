@@ -14,6 +14,7 @@ import type { AppDeps } from './deps.js';
 import { AppError } from './lib/errors.js';
 import { authRoutes } from './routes/auth.js';
 import { budgetRoutes } from './routes/budget.js';
+import { importRoutes } from './routes/import.js';
 import { contentRoutes } from './routes/content.js';
 import { financeRoutes } from './routes/finance.js';
 import { householdRootRoutes, householdRoutes } from './routes/households.js';
@@ -105,6 +106,7 @@ export async function buildApp(deps: AppDeps, options: BuildAppOptions = {}): Pr
             await h.register(stageRoutes);
             await h.register(financeRoutes);
             await h.register(budgetRoutes);
+            await h.register(importRoutes);
             await h.register(prepaymentRoutes);
             await h.register(planRoutes);
             await h.register(recommendationRoutes);

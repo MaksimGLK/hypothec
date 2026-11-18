@@ -1,4 +1,4 @@
-import { addMonths, buildSchedule, compareModes, formatRub, type LoanInput, monthsBetween, type PrepaymentInput, type PrepaymentMode, prepaymentTimingEffect, rub } from '@hypothec/core';
+import { addMonths, buildSchedule, compareCandidateModes, formatDateNum, formatMonthRu, formatRub, type LoanInput, monthsBetween, type PrepaymentInput, type PrepaymentMode, prepaymentTimingEffect, rub } from '@hypothec/core';
 import { AlertTriangle, Plus, Star, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
@@ -7,7 +7,7 @@ import { useAuth } from '../../api/auth.js';
 import { useHh, useHhMutation } from '../../api/household.js';
 import type { CompareDto, DashboardDto, LoanDto, PrepaymentScenarioDto } from '../../api/types.js';
 import { LessonsFor, Term } from '../../components/learning.js';
-import { Badge, Button, Card, ConfirmButton, cx, DateText, Empty, ErrorBox, Field, Input, Modal, Money, MoneyInput, PageHeader, Segmented, Select, Spinner } from '../../components/ui/index.js';
+import { Badge, Button, Card, ConfirmButton, cx, DateInput, DateText, Empty, ErrorBox, Field, Input, Modal, Money, MoneyInput, PageHeader, Segmented, Select, Spinner } from '../../components/ui/index.js';
 import { Tabs } from '../../layout/AppLayout.js';
 import { chartTooltip, LOAN_TABS, rubAxis } from './LoanPage.js';
 
@@ -22,10 +22,31 @@ const today = () => new Date().toISOString().slice(0, 10);
 function toLoanInput(l: LoanDto): LoanInput {
   return { ...l, rateChanges: l.rateChanges ?? [] } as LoanInput;
 }
+/** Как в плане на сервере: отменённые досрочки в расчёт не идут, внесённые считаются по сумме, которую принял банк. */
+function planned(list: PrepaymentScenarioDto['prepayments']) {
+  return list.filter((p) => p.status !== 'skipped').map((p) => ({ ...p, amountKop: p.factAmountKop ?? p.amountKop })) as PrepaymentInput[];
+}
 function months(n: number) {
   const y = Math.floor(n / 12);
   const m = n % 12;
   return [y ? `${y} г.` : '', m ? `${m} мес.` : ''].filter(Boolean).join(' ') || '0';
+}
+
+const paymentDayOf = (loan: LoanDto) => loan.paymentDay ?? Number(loan.issueDate.slice(8, 10));
+
+/** Когда вносить: разовая — дата; ежемесячная — с какой даты и какого числа (пусто — в день платежа). */
+function schedulePart(kind: 'one_off' | 'monthly', date: string, day: string, loan: LoanDto) {
+  if (kind === 'one_off') return { date };
+  const n = Number(day);
+  return { startDate: date, dayOfMonth: n >= 1 && n <= 31 ? n : paymentDayOf(loan) };
+}
+
+function DayOfMonthField({ id, value, onChange, loan }: { id: string; value: string; onChange(v: string): void; loan: LoanDto }) {
+  return (
+    <Field label="Какого числа" htmlFor={id} hint={`Платёж по кредиту — ${paymentDayOf(loan)}-го`}>
+      <Input id={id} inputMode="numeric" value={value} onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 2))} />
+    </Field>
+  );
 }
 
 export default function PrepaymentPage() {
@@ -95,7 +116,8 @@ function SimplePrepayment({ loan, scenario }: { loan: LoanDto; scenario?: Prepay
   const [kind, setKind] = useState<'one_off' | 'monthly'>('one_off');
   const [amount, setAmount] = useState<number | null>(rub(300_000));
   const [date, setDate] = useState(() => (today() > loan.issueDate ? addMonths(today(), 1) : addMonths(loan.issueDate, 1)));
-  const existing = (scenario?.prepayments ?? []) as PrepaymentInput[];
+  const [day, setDay] = useState(() => String(paymentDayOf(loan)));
+  const existing = planned(scenario?.prepayments ?? []);
   const add = useHhMutation<Record<string, unknown>>('POST', `/prepayment-scenarios/${scenario?.id}/prepayments`, { success: 'Добавлено в план' });
   const removePp = useHhMutation<{ _id: string }>('DELETE', (b) => `/prepayment-scenarios/${scenario?.id}/prepayments/${b._id}`, { success: 'Убрано из плана' });
   const r = useMemo(() => {
@@ -103,16 +125,17 @@ function SimplePrepayment({ loan, scenario }: { loan: LoanDto; scenario?: Prepay
     try {
       const input = toLoanInput(loan);
       const base = buildSchedule(input, existing);
-      const next = buildSchedule(input, [...existing, { id: 'q', loanId: loan.id, kind, amountKop: amount, mode: 'reduce_term', ...(kind === 'one_off' ? { date } : { startDate: date }) }]);
-      return { savings: base.summary.totalInterestKop - next.summary.totalInterestKop, months: monthsBetween(next.summary.payoffDate, base.summary.payoffDate), payoff: next.summary.payoffDate };
+      const next = buildSchedule(input, [...existing, { id: 'q', loanId: loan.id, kind, amountKop: amount, mode: 'reduce_term', ...schedulePart(kind, date, day, loan) }]);
+      const contract = buildSchedule(input, []);
+      return { savings: base.summary.totalInterestKop - next.summary.totalInterestKop, total: contract.summary.totalInterestKop - next.summary.totalInterestKop, months: monthsBetween(next.summary.payoffDate, contract.summary.payoffDate), payoff: next.summary.payoffDate };
     } catch {
       return null;
     }
-  }, [loan, existing, kind, amount, date]);
+  }, [loan, existing, kind, amount, date, day]);
   return (
     <>
       <Card title="Сколько сэкономит досрочка">
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className={cx('grid gap-4 sm:grid-cols-3', kind === 'monthly' && 'lg:grid-cols-4')}>
           <Field label="Как платить" htmlFor="sq-kind">
             <Select id="sq-kind" value={kind} onChange={(e) => setKind(e.target.value as 'one_off' | 'monthly')}>
               <option value="one_off">Разовый платёж</option>
@@ -123,18 +146,24 @@ function SimplePrepayment({ loan, scenario }: { loan: LoanDto; scenario?: Prepay
             <MoneyInput id="sq-amount" value={amount} onChange={setAmount} />
           </Field>
           <Field label={kind === 'one_off' ? 'Дата' : 'Начиная с'} htmlFor="sq-date">
-            <Input id="sq-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <DateInput id="sq-date" value={date} onChange={(e) => setDate(e.target.value)} />
           </Field>
+          {kind === 'monthly' && <DayOfMonthField id="sq-day" value={day} onChange={setDay} loan={loan} />}
         </div>
         {r && (
           <div className="mt-4 rounded-xl bg-primary-soft p-4">
-            <p className="text-sm text-ink-2">Переплата станет меньше на</p>
+            <p className="text-sm text-ink-2">Эта досрочка экономит</p>
             <p className="text-2xl font-semibold text-ok">
               <Money kop={r.savings} />
             </p>
-            <p className="mt-1 text-sm">{r.months > 0 ? `Кредит закроется на ${months(r.months)} раньше — ` : 'Кредит закроется '}<DateText date={r.payoff} /></p>
+            {existing.length > 0 && (
+              <p className="mt-1 text-sm">
+                Всего со всеми досрочками: экономия <Money kop={r.total} className="font-medium" />
+              </p>
+            )}
+            <p className="mt-1 text-sm">{r.months > 0 ? `Кредит закроется на ${months(r.months)} раньше договора — ` : 'Кредит закроется в срок по договору — '}<DateText date={r.payoff} /></p>
             {scenario && (
-              <Button size="sm" className="mt-3" loading={add.isPending} onClick={() => add.mutate({ loanId: loan.id, kind, amountKop: amount, mode: 'reduce_term', ...(kind === 'one_off' ? { date } : { startDate: date }) })}>
+              <Button size="sm" className="mt-3" loading={add.isPending} onClick={() => add.mutate({ loanId: loan.id, kind, amountKop: amount, mode: 'reduce_term', ...schedulePart(kind, date, day, loan) })}>
                 Добавить в план
               </Button>
             )}
@@ -148,7 +177,7 @@ function SimplePrepayment({ loan, scenario }: { loan: LoanDto; scenario?: Prepay
             {scenario!.prepayments.map((p) => (
               <li key={p.id} className="flex items-center justify-between gap-3 py-2 text-sm">
                 <span>
-                  <Money kop={p.amountKop} className="font-medium" /> {p.kind === 'monthly' ? 'каждый месяц с ' : ''}
+                  <Money kop={p.amountKop} className="font-medium" /> {p.kind === 'monthly' ? `каждый месяц${p.dayOfMonth ? `, ${p.dayOfMonth}-го,` : ''} с ` : ''}
                   <DateText date={p.kind === 'monthly' ? p.startDate : p.date} />
                 </span>
                 <Button size="sm" variant="ghost" aria-label="Убрать досрочку" onClick={() => removePp.mutate({ _id: p.id })}>
@@ -168,27 +197,23 @@ function QuickCalculator({ loan, existing, scenario }: { loan: LoanDto; existing
   const [kind, setKind] = useState<'one_off' | 'monthly'>('one_off');
   const [amount, setAmount] = useState<number | null>(rub(500_000));
   const [date, setDate] = useState(() => (today() > loan.issueDate ? addMonths(today(), 1) : addMonths(loan.issueDate, 1)));
+  const [day, setDay] = useState(() => String(paymentDayOf(loan)));
   const add = useHhMutation<Record<string, unknown>>('POST', `/prepayment-scenarios/${scenario?.id}/prepayments`, { success: 'Добавлено в сценарий' });
   const result = useMemo(() => {
     if (!amount) return null;
-    const p: PrepaymentInput = { id: 'quick', loanId: loan.id, kind, amountKop: amount, mode: 'reduce_term', ...(kind === 'one_off' ? { date } : { startDate: date }) };
+    const p: PrepaymentInput = { id: 'quick', loanId: loan.id, kind, amountKop: amount, mode: 'reduce_term', ...schedulePart(kind, date, day, loan) };
     try {
-      return compareModes(toLoanInput(loan), [...(existing as PrepaymentInput[]), p]);
+      return compareCandidateModes(toLoanInput(loan), planned(existing), p);
     } catch {
       return null;
     }
-  }, [loan, existing, kind, amount, date]);
-  const base = useMemo(() => {
-    try {
-      return compareModes(toLoanInput(loan), existing as PrepaymentInput[]);
-    } catch {
-      return null;
-    }
-  }, [loan, existing]);
+  }, [loan, existing, kind, amount, date, day]);
+  const stopsKeepAmount = planned(existing).some((p) => p.mode === 'reduce_payment_keep_amount');
+  const hasPlan = planned(existing).length > 0;
 
   return (
     <Card title="Быстрый расчёт">
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className={cx('grid gap-4 sm:grid-cols-3', kind === 'monthly' && 'lg:grid-cols-4')}>
         <Field label="Как платить" htmlFor="q-kind">
           <Select id="q-kind" value={kind} onChange={(e) => setKind(e.target.value as 'one_off' | 'monthly')}>
             <option value="one_off">Разовый платёж</option>
@@ -199,37 +224,57 @@ function QuickCalculator({ loan, existing, scenario }: { loan: LoanDto; existing
           <MoneyInput id="q-amount" value={amount} onChange={setAmount} />
         </Field>
         <Field label={kind === 'one_off' ? 'Дата' : 'Начиная с'} htmlFor="q-date">
-          <Input id="q-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          <DateInput id="q-date" value={date} onChange={(e) => setDate(e.target.value)} />
         </Field>
+        {kind === 'monthly' && <DayOfMonthField id="q-day" value={day} onChange={setDay} loan={loan} />}
       </div>
-      {result && base && (
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
+      {result && (
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
           {(
             [
-              ['reduce_term', result.reduceTerm, base.reduceTerm],
-              ['reduce_payment', result.reducePayment, base.reducePayment],
-              ['reduce_payment_keep_amount', result.reducePaymentKeepAmount, base.reducePaymentKeepAmount],
+              ['reduce_term', result.reduceTerm],
+              ['reduce_payment', result.reducePayment],
             ] as const
-          ).map(([mode, r, b]) => (
+          ).map(([mode, r]) => (
             <div key={mode} className={cx('rounded-xl border p-3', mode === 'reduce_term' ? 'border-primary bg-primary-soft' : 'border-border')}>
               <p className="text-sm font-medium">{MODE_LABEL[mode]}</p>
-              <p className="mt-2 text-xl font-semibold text-ok">
-                <Money kop={r.savingsKop - b.savingsKop} />
+              <p className="mt-2 text-xs text-ink-2">{r.savingsKop < 0 ? 'С этой досрочкой переплата вырастет на' : 'Эта досрочка экономит'}</p>
+              <p className={cx('text-xl font-semibold', r.savingsKop < 0 ? 'text-warn' : 'text-ok')}>
+                <Money kop={Math.abs(r.savingsKop)} />
               </p>
-              <p className="text-xs text-ink-2">меньше переплата</p>
-              <p className="mt-2 text-sm">
-                {r.monthsSaved - b.monthsSaved > 0 ? `закроется на ${months(r.monthsSaved - b.monthsSaved)} раньше` : 'срок прежний'}
+              <p className="text-xs text-ink-2">
+                срок: {r.monthsSaved > 0 ? `на ${months(r.monthsSaved)} короче` : r.monthsSaved < 0 ? `на ${months(-r.monthsSaved)} дольше текущего плана` : 'не меняется'}
               </p>
-              <p className="text-sm text-ink-2">
-                платёж после: <Money kop={r.paymentAfterFirstPrepaymentKop} />
-              </p>
+              <div className="mt-2 border-t border-border pt-2">
+                {hasPlan && (
+                  <p className="text-sm">
+                    Всего со всеми досрочками: {r.savingsVsContractKop < 0 ? 'переплата больше на ' : 'экономия '}
+                    <Money kop={Math.abs(r.savingsVsContractKop)} className="font-medium" />
+                  </p>
+                )}
+                <p className="text-sm">
+                  Закрытие: {r.monthsBeforeContract > 0 ? `на ${months(r.monthsBeforeContract)} раньше договора` : 'в срок по договору'} — {formatMonthRu(r.payoffDate)}
+                </p>
+              </div>
+              {r.paymentAfterKop > 0 ? (
+                <>
+                  <p className="mt-1 text-sm">
+                    будете платить в месяц: <Money kop={r.monthlyOutlayKop} className="font-medium" />
+                  </p>
+                  <p className="text-sm text-ink-2">
+                    обязательный платёж: <Money kop={r.paymentAfterKop} />
+                  </p>
+                </>
+              ) : (
+                <p className="mt-1 text-sm text-ink-2">кредит будет закрыт</p>
+              )}
               {scenario && (
                 <Button
                   size="sm"
                   variant="secondary"
                   className="mt-3 w-full"
                   loading={add.isPending}
-                  onClick={() => add.mutate({ loanId: loan.id, kind, amountKop: amount, mode, ...(kind === 'one_off' ? { date } : { startDate: date }) })}
+                  onClick={() => add.mutate({ loanId: loan.id, kind, amountKop: amount, mode, ...schedulePart(kind, date, day, loan) })}
                 >
                   В сценарий «{scenario.name}»
                 </Button>
@@ -239,7 +284,8 @@ function QuickCalculator({ loan, existing, scenario }: { loan: LoanDto; existing
         </div>
       )}
       <p className="mt-3 text-xs text-muted">
-        «Платить прежнюю сумму»: банк снижает обязательный платёж, а вы продолжаете платить столько же — разница уходит в досрочку. Экономия как при сокращении срока, но если доход упадёт, можно платить меньше.
+        Банк снизил платёж, но вы можете и дальше платить прежнюю сумму — разница уйдёт в досрочку. Экономия тогда будет как при сокращении срока, а если доход упадёт, можно платить меньше.
+        {stopsKeepAmount && ' У вас уже есть досрочка с прежней суммой: вариант «Уменьшить платёж» значит, что с этой даты вы перестаёте доплачивать, поэтому переплата по сравнению с текущим планом может вырасти, но срок по договору не меняется.'}
       </p>
     </Card>
   );
@@ -296,7 +342,7 @@ function ScenarioEditor({ scenario, loan }: { scenario: PrepaymentScenarioDto; l
   const sim = useMemo(() => {
     try {
       const input = toLoanInput(loan);
-      const s = buildSchedule(input, scenario.prepayments as PrepaymentInput[]);
+      const s = buildSchedule(input, planned(scenario.prepayments));
       const b = buildSchedule(input, []);
       return { s, savings: b.summary.totalInterestKop - s.summary.totalInterestKop, monthsSaved: monthsBetween(s.summary.payoffDate, b.summary.payoffDate) };
     } catch {
@@ -342,7 +388,7 @@ function ScenarioEditor({ scenario, loan }: { scenario: PrepaymentScenarioDto; l
             <li key={p.id} className="flex items-center gap-3 py-2 text-sm">
               <div className="flex-1">
                 <p className="font-medium">
-                  <Money kop={p.amountKop} /> {p.kind === 'monthly' ? 'каждый месяц' : 'разово'}
+                  <Money kop={p.amountKop} /> {p.kind === 'monthly' ? `каждый месяц${p.dayOfMonth ? `, ${p.dayOfMonth}-го` : ''}` : 'разово'}
                   {p.source === 'tax_refund' && <Badge tone="ok"> вычет</Badge>}
                   {p.status === 'done' && <Badge tone={p.confirmed ? 'ok' : 'warn'}>{p.confirmed ? ' внесена' : ' ждёт подтверждения'}</Badge>}
                   {p.status === 'skipped' && <Badge> не вносили</Badge>}
@@ -380,6 +426,7 @@ function AddPrepayment({ scenario, loan, onClose }: { scenario: PrepaymentScenar
   const [amount, setAmount] = useState<number | null>(null);
   const [date, setDate] = useState(addMonths(today(), 1));
   const [end, setEnd] = useState('');
+  const [day, setDay] = useState(() => String(paymentDayOf(loan)));
   const [mode, setMode] = useState<PrepaymentMode>('reduce_term');
   const add = useHhMutation<Record<string, unknown>>('POST', `/prepayment-scenarios/${scenario.id}/prepayments`, { success: 'Добавлено' });
   return (
@@ -388,7 +435,7 @@ function AddPrepayment({ scenario, loan, onClose }: { scenario: PrepaymentScenar
         className="space-y-4"
         onSubmit={(e) => {
           e.preventDefault();
-          add.mutate({ loanId: loan.id, kind, amountKop: amount, mode, ...(kind === 'one_off' ? { date } : { startDate: date, ...(end ? { endDate: end } : {}) }) }, { onSuccess: onClose });
+          add.mutate({ loanId: loan.id, kind, amountKop: amount, mode, ...schedulePart(kind, date, day, loan), ...(kind === 'monthly' && end ? { endDate: end } : {}) }, { onSuccess: onClose });
         }}
       >
         <Segmented label="Как платить" value={kind} onChange={setKind} options={[{ value: 'one_off', label: 'Разово' }, { value: 'monthly', label: 'Каждый месяц' }]} />
@@ -397,14 +444,15 @@ function AddPrepayment({ scenario, loan, onClose }: { scenario: PrepaymentScenar
         </Field>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label={kind === 'one_off' ? 'Дата' : 'С какого месяца'} htmlFor="pp-date">
-            <Input id="pp-date" type="date" required value={date} onChange={(e) => setDate(e.target.value)} />
+            <DateInput id="pp-date" required value={date} onChange={(e) => setDate(e.target.value)} />
           </Field>
           {kind === 'monthly' && (
             <Field label="До какого месяца" htmlFor="pp-end" hint="Пусто — до конца кредита">
-              <Input id="pp-end" type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
+              <DateInput id="pp-end" value={end} onChange={(e) => setEnd(e.target.value)} />
             </Field>
           )}
         </div>
+        {kind === 'monthly' && <DayOfMonthField id="pp-day" value={day} onChange={setDay} loan={loan} />}
         <Field label="Что пересчитать" htmlFor="pp-mode">
           <Select id="pp-mode" value={mode} onChange={(e) => setMode(e.target.value as PrepaymentMode)}>
             {Object.entries(MODE_LABEL).map(([k, l]) => (
@@ -495,7 +543,7 @@ function Compare({ loan, list }: { loan: LoanDto; list: PrepaymentScenarioDto[] 
                 <CartesianGrid stroke="var(--border)" vertical={false} />
                 <XAxis dataKey="date" tickFormatter={(d: string) => d.slice(0, 4)} minTickGap={40} stroke="var(--muted)" fontSize={12} />
                 <YAxis tickFormatter={rubAxis} stroke="var(--muted)" fontSize={12} width={60} />
-                <Tooltip {...chartTooltip} labelFormatter={(d) => new Date(String(d)).toLocaleDateString('ru-RU')} formatter={(v, n) => [formatRub(Number(v), { kopecks: 'never' }), String(n)]} />
+                <Tooltip {...chartTooltip} labelFormatter={(d) => formatDateNum(String(d))} formatter={(v, n) => [formatRub(Number(v), { kopecks: 'never' }), String(n)]} />
                 <Legend />
                 {[data.baseline, ...data.scenarios].map((s, i) => (
                   <Line key={s.scenarioId} dataKey={`s${i}`} name={s.name} stroke={COLORS[i]} dot={false} strokeWidth={2} strokeDasharray={i === 0 ? '4 4' : undefined} />
@@ -515,7 +563,7 @@ function Timing({ loan, existing }: { loan: LoanDto; existing: PrepaymentScenari
     if (!amount) return null;
     const start = today() > loan.issueDate ? today() : addMonths(loan.issueDate, 1);
     try {
-      return prepaymentTimingEffect(toLoanInput(loan), amount, [start, addMonths(start, 12), addMonths(start, 36), addMonths(start, 60), addMonths(start, 120)], 'reduce_term', existing as PrepaymentInput[]);
+      return prepaymentTimingEffect(toLoanInput(loan), amount, [start, addMonths(start, 12), addMonths(start, 36), addMonths(start, 60), addMonths(start, 120)], 'reduce_term', planned(existing));
     } catch {
       return null;
     }
