@@ -277,4 +277,15 @@ describe('копилка: план и факт', () => {
     const stranger = ((await client(ctx, other.token)('GET', `/households/${other.householdId}/members`)).data as { id: string }[])[0]!;
     expect((await api('POST', p('/living-expenses'), { name: 'Чужое', amountKop: 1, memberId: stranger.id })).statusCode).toBe(404);
   });
+
+  it('тариф страховки с 4 знаками после точки не ломает список расходов', async () => {
+    const s = await register(ctx);
+    const api = client(ctx, s.token);
+    const p = (x: string) => `/households/${s.householdId}${x}`;
+    const created = await api('POST', p('/expenses'), { name: 'Страхование жизни и здоровья', category: 'optional', planKop: 0, recurrence: 'yearly', date: '2026-10-08', percentOfLoanBalance: '0.1869' });
+    expect(created.statusCode, created.body).toBe(201);
+    const list = await api('GET', p('/expenses'));
+    expect(list.statusCode, list.body).toBe(200);
+    expect(list.data.find((e: { name: string }) => e.name === 'Страхование жизни и здоровья').percentOfLoanBalance).toBe('0.1869');
+  });
 });
