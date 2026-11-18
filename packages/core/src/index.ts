@@ -34,3 +34,4 @@ export * from './lessons/personal.js';
 export * from './budget/budget.js';
 export * from './projection/distribution.js';
 export * from './import/statement.js';
+export * from './import/pdf.js';

@@ -255,4 +255,26 @@ describe('копилка: план и факт', () => {
     const other = await register(ctx);
     expect((await client(ctx, other.token)('PUT', `/households/${other.householdId}/budget/contributions`, { accountId: cushion.id, month: '2026-10', amountKop: 1 })).statusCode).toBe(404);
   });
+
+  it('категория бюджета закрепляется за участником семьи, чужой участник не подходит', async () => {
+    const s = await register(ctx);
+    const api = client(ctx, s.token);
+    const p = (x: string) => `/households/${s.householdId}${x}`;
+    const me = ((await api('GET', p('/members'))).data as { id: string }[])[0]!;
+
+    const own = await api('POST', p('/living-expenses'), { name: 'Спортзал', amountKop: 300_000, memberId: me.id });
+    expect(own.statusCode, own.body).toBe(201);
+    expect(own.data.memberId).toBe(me.id);
+    const shared = await api('POST', p('/living-expenses'), { name: 'Продукты', amountKop: 4_000_000 });
+    expect(shared.data.memberId).toBeUndefined();
+
+    // снять закрепление — категория снова общая
+    const cleared = await api('PATCH', p(`/living-expenses/${own.data.id}`), { memberId: null, version: own.data.version });
+    expect(cleared.statusCode, cleared.body).toBe(200);
+    expect(cleared.data.memberId).toBeUndefined();
+
+    const other = await register(ctx);
+    const stranger = ((await client(ctx, other.token)('GET', `/households/${other.householdId}/members`)).data as { id: string }[])[0]!;
+    expect((await api('POST', p('/living-expenses'), { name: 'Чужое', amountKop: 1, memberId: stranger.id })).statusCode).toBe(404);
+  });
 });

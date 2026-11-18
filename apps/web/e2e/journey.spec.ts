@@ -140,6 +140,18 @@ test('семья проходит путь: регистрация → маст�
   await expect(page.getByRole('heading', { name: 'Мой месяц' })).toBeVisible();
   await expect(page.getByText(/Внесено трат: 2/)).toBeVisible();
 
+  // та же выписка в PDF: текст из PDF собирается в операции прямо в браузере
+  await page.getByRole('link', { name: 'Загрузить выписку' }).first().click();
+  await page.getByLabel('Файл выписки').setInputFiles('e2e/fixtures/tbank-statement.pdf');
+  // pdf.js подгружается только при выборе PDF — в режиме разработки это бывает дольше обычного
+  await expect(page.getByText(/Т-Банк ·/)).toBeVisible({ timeout: 20_000 });
+  // в PDF нет категории банка — магазин узнаётся по латинскому названию
+  await expect(page.getByLabel('Категория: Оплата в PYATEROCHKA 1234 Moskva RUS')).toHaveValue(/.+/);
+  await expect(page.getByLabel('Категория: Оплата в SHOKOLADNITSA Moskva RUS')).toHaveValue(/.+/);
+  await page.screenshot({ path: shots('03c-import-pdf'), fullPage: true });
+  await page.getByRole('button', { name: /^Внести 3 траты/ }).click();
+  await expect(page.getByText(/Внесено трат: 3/)).toBeVisible();
+
   // доходы одной строкой — подробный раздел
   await page.goto('/money/incomes');
   await page.getByLabel('Доход одной строкой').fill('Зарплата Анны 250 000 каждый месяц 10-го');

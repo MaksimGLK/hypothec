@@ -241,6 +241,8 @@ export const livingExpenses = pgTable('living_expenses', {
   essential: boolean('essential').notNull().default(true),
   group: text('group'),
   catalogKey: text('catalog_key'),
+  /** Чья категория: участник семьи или null — общая. */
+  memberId: uuid('member_id').references(() => householdMembers.id, { onDelete: 'set null' }),
   sort: integer('sort').notNull().default(0),
   /** День автоплатежа (1–31) — трата на сумму плана записывается сама. */
   autoPayDay: integer('auto_pay_day'),

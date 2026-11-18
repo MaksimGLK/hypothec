@@ -7,14 +7,14 @@ import { mutate } from './helpers.js';
 
 /**
  * Импорт выписки банка в бюджет: предпросмотр с предложенными категориями → подтверждение пользователем → траты.
- * Файл разбирает клиент (CSV или Excel) и присылает таблицу — сервер не хранит выписку целиком.
+ * Файл разбирает клиент (CSV, Excel или PDF) и присылает таблицу — сервер не хранит выписку целиком.
  */
 export const importRoutes: FastifyPluginAsyncZod = async (app) => {
   const { db } = app.deps;
   const tags = ['budget'];
 
   app.post('/budget/import/preview', { bodyLimit: 8_000_000, schema: { tags, summary: 'Разобрать выписку и предложить категории', body: ImportPreviewRequest } }, async (req) => {
-    const parsed = parseStatement(req.body.rows, req.body.manual);
+    const parsed = parseStatement(req.body.rows, req.body.manual, req.body.bank);
     const hid = req.household.id;
     const [cats, rules] = await Promise.all([
       db.select({ id: s.livingExpenses.id, name: s.livingExpenses.name, catalogKey: s.livingExpenses.catalogKey }).from(s.livingExpenses).where(eq(s.livingExpenses.householdId, hid)),

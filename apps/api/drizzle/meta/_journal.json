@@ -50,6 +50,13 @@
       "when": 1793647567226,
       "tag": "0006_prepayment_day",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795007324521,
+      "tag": "0007_living_member",
+      "breakpoints": true
     }
   ]
 }
